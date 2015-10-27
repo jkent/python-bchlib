@@ -206,12 +206,15 @@ Bch_correct(BchObject *self, PyObject *args, PyObject *kwds)
 
 	while (nerr--) {
 		unsigned int bitnum = errloc[nerr];
-		if (bitnum >= (data_len * 8)) {
+		if (bitnum >= data_len*8 + ecc_len*8) {
 			PyErr_SetString(PyExc_IndexError,
-				"ECC is damaged or invalid");
+				"uncorrectable error");
 			goto cleanup;
 		}
-		data[bitnum/8] ^= (1 << (bitnum & 7));
+		if (bitnum < data_len*8)
+			data[bitnum/8] ^= 1 << (bitnum & 7);
+		//else
+		//	ecc[bitnum/8 - data_len] ^= 1 << (bitnum & 7);
 	}
 
 	if (self->reversed)
