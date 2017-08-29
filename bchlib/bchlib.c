@@ -1,7 +1,7 @@
 /*
  * Python C module for BCH encoding/correction.
  *
- * Copyright © 2013 Jeff Kent <jeff@jkent.net>
+ * Copyright © 2013, 2017 Jeff Kent <jeff@jkent.net>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published by
@@ -29,7 +29,7 @@
 
 
 typedef struct {
-	PyObject_HEAD;
+	PyObject_HEAD
 	struct bch_control *bch;
 	bool reversed;
 } BchObject;
@@ -50,7 +50,7 @@ Bch_dealloc(BchObject *self)
 	if (self->bch)
 		free_bch(self->bch);
 
-	self->ob_type->tp_free((PyObject *)self);
+	Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
 static int
@@ -100,8 +100,9 @@ Bch_encode(BchObject *self, PyObject *args, PyObject *kwds)
 	uint8_t *data;
 	uint8_t ecc[self->bch->ecc_bytes];
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s#|z#", kwlist,
-			&rdata, &data_len, &previous_ecc, &previous_ecc_len));
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "y#|z#", kwlist,
+			&rdata, &data_len, &previous_ecc, &previous_ecc_len))
+		return NULL;
 
 	if (previous_ecc) {
 		if (previous_ecc_len != self->bch->ecc_bytes) {
@@ -125,7 +126,10 @@ Bch_encode(BchObject *self, PyObject *args, PyObject *kwds)
 		encode_bch(self->bch, rdata, data_len, ecc);
 	}
 
-	return PyString_FromStringAndSize((char *)ecc, self->bch->ecc_bytes);
+	return PyBytes_FromStringAndSize((char *)ecc, self->bch->ecc_bytes);
+
+	Py_INCREF(Py_None);
+	return Py_None;
 }
 
 static PyObject *
@@ -139,7 +143,7 @@ Bch_correct(BchObject *self, PyObject *args, PyObject *kwds)
 	unsigned int errloc[self->bch->t];
 	int nerr = -1;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s#|z#O", kwlist,
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "y#|z#O", kwlist,
 			&rdata, &data_len, &ecc, &ecc_len, &po_syn))
 		return NULL;
 
@@ -168,7 +172,7 @@ Bch_correct(BchObject *self, PyObject *args, PyObject *kwds)
 		for (int i = 0; i < self->bch->t*2; i++) {
 			PyObject *value = PySequence_GetItem(po_syn, i);
 			Py_INCREF(value);
-			long ltmp = PyInt_AsLong(value);
+			long ltmp = PyLong_AsLong(value);
 			if (ltmp == -1 && PyErr_Occurred()) {
 				Py_DECREF(value);
 				return NULL;
@@ -213,14 +217,15 @@ Bch_correct(BchObject *self, PyObject *args, PyObject *kwds)
 		}
 		if (bitnum < data_len*8)
 			data[bitnum/8] ^= 1 << (bitnum & 7);
-		//else
+		// correction of the ecc itself is possible with this
+		//else 
 		//	ecc[bitnum/8 - data_len] ^= 1 << (bitnum & 7);
 	}
 
 	if (self->reversed)
 		reverse_bytes(data, data, data_len);
 
-	result = PyString_FromStringAndSize((char *)data, data_len);
+	result = PyBytes_FromStringAndSize((char *)data, data_len);
 
 cleanup:
 	free(data);
@@ -237,7 +242,6 @@ Bch_calc_even_syndrome(BchObject *self, PyObject *args, PyObject *kwds)
 	unsigned int *syn = NULL;
 	long tmp;
 	int i;
-
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist,
 			&po_syn))
@@ -262,7 +266,7 @@ Bch_calc_even_syndrome(BchObject *self, PyObject *args, PyObject *kwds)
 	for (i = 0; i < self->bch->t*2; i++) {
 		value = PySequence_GetItem(po_syn, i);
 		Py_INCREF(value);
-		tmp = PyInt_AsLong(value);
+		tmp = PyLong_AsLong(value);
 		if (tmp == -1 && PyErr_Occurred()) {
 			Py_DECREF(value);
 			goto cleanup;
@@ -275,7 +279,7 @@ Bch_calc_even_syndrome(BchObject *self, PyObject *args, PyObject *kwds)
 
 	result = PyTuple_New(self->bch->t*2);
 	for (i = 0; i < self->bch->t*2; i++) {
-		value = PyInt_FromLong(syn[i]);
+		value = PyLong_FromLong(syn[i]);
 		PyTuple_SetItem(result, i, value);
 	}
 
@@ -294,13 +298,13 @@ Bch_getattr(BchObject *self, PyObject *name)
 	int i;
 
 	Py_INCREF(name);
-	const char *cname = PyString_AsString(name);
+	const char *cname = PyUnicode_AsUTF8(name);
 
 	if (strcmp(cname, "syndrome") == 0) {
 		if (self->bch->syn) {
 			result = PyTuple_New(self->bch->t*2);
 			for (i = 0; i < self->bch->t*2; i++) {
-				value = PyInt_FromLong(self->bch->syn[i]);
+				value = PyLong_FromLong(self->bch->syn[i]);
 				PyTuple_SetItem(result, i, value);
 			}
 		}
@@ -318,20 +322,20 @@ Bch_getattr(BchObject *self, PyObject *name)
 }
 
 static PyMemberDef Bch_members[] = {
-	{"syndrome", -1, 0, RO|RESTRICTED, NULL},
+	{"syndrome", -1, 0, READONLY|RESTRICTED, NULL},
 	{NULL}
 };
 
 static PyMethodDef Bch_methods[] = {
-	{"encode", (PyCFunction)Bch_encode, METH_KEYWORDS, NULL},
-	{"correct", (PyCFunction)Bch_correct, METH_KEYWORDS, NULL},
-	{"calc_even_syndrome", (PyCFunction)Bch_calc_even_syndrome, METH_KEYWORDS, NULL},
+	{"encode", (PyCFunction)Bch_encode, METH_VARARGS, NULL},
+	{"correct", (PyCFunction)Bch_correct, METH_VARARGS, NULL},
+	{"calc_even_syndrome", (PyCFunction)Bch_calc_even_syndrome, METH_VARARGS, NULL},
 	{NULL}
 };
 
 static PyTypeObject BchType = {
-  PyObject_HEAD_INIT(NULL)
-  .tp_name      = "bch.bch",
+  PyVarObject_HEAD_INIT(NULL, 0)
+  .tp_name      = "bchlib.bch",
   .tp_basicsize = sizeof(BchObject),
   .tp_dealloc   = (destructor)Bch_dealloc,
   .tp_getattro  = (getattrofunc)Bch_getattr,
@@ -347,22 +351,41 @@ static PyMethodDef module_methods[] = {
     {NULL}
 };
 
+#if PY_MAJOR_VERSION >= 3
+static struct PyModuleDef moduledef = {
+	PyModuleDef_HEAD_INIT,
+	"bch",
+	"BCH Library",
+	-1,
+	module_methods,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+};
+#endif
+
 #ifndef PyMODINIT_FUNC
 #define PyMODINIT_FUNC void
 #endif
 PyMODINIT_FUNC
-initbchlib(void)
+PyInit_bchlib(void)
 {
 	PyObject *m;
 
 	if (PyType_Ready(&BchType) < 0)
-		return;
-
+		return NULL;
+#if PY_MAJOR_VERSION >= 3
+	m = PyModule_Create(&moduledef);
+#else
 	m = Py_InitModule3("bchlib", module_methods, NULL);
+#endif
 	if (m == NULL)
-		return;
+		return NULL;
 
 	Py_INCREF(&BchType);
 	PyModule_AddObject(m, "bch", (PyObject *)&BchType);
+
+	return m;
 }
 
