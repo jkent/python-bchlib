@@ -169,7 +169,7 @@ Bch_correct(BchObject *self, PyObject *args, PyObject *kwds)
 
 		Py_INCREF(po_syn);
 		unsigned int syn[self->bch->t];
-		for (int i = 0; i < self->bch->t*2; i++) {
+		for (unsigned int i = 0; i < self->bch->t*2; i++) {
 			PyObject *value = PySequence_GetItem(po_syn, i);
 			Py_INCREF(value);
 			long ltmp = PyLong_AsLong(value);
@@ -241,7 +241,7 @@ Bch_calc_even_syndrome(BchObject *self, PyObject *args, PyObject *kwds)
 	PyObject *value = NULL;
 	unsigned int *syn = NULL;
 	long tmp;
-	int i;
+	unsigned int i;
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist,
 			&po_syn))
@@ -295,7 +295,7 @@ Bch_getattr(BchObject *self, PyObject *name)
 {
 	PyObject *value;
 	PyObject *result = NULL;
-	int i;
+	unsigned int i;
 
 	Py_INCREF(name);
 	const char *cname = PyUnicode_AsUTF8(name);
