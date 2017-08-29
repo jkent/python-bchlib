@@ -79,7 +79,12 @@
 #else
 
 # define _BSD_SOURCE
-# include <endian.h>
+# if defined(__APPLE__)
+#   include <libkern/OSByteOrder.h>
+#   define htobe32(x) OSSwapHostToBigInt32(x)
+# else
+#   include <endian.h>
+# endif
 # include <errno.h>
 # include <stdint.h>
 # include <stdio.h>
