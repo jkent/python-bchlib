@@ -100,8 +100,13 @@ Bch_encode(BchObject *self, PyObject *args, PyObject *kwds)
 	uint8_t *data;
 	uint8_t ecc[self->bch->ecc_bytes];
 
+#if PY_MAJOR_VERSION >= 3
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "y#|z#", kwlist,
 			&rdata, &data_len, &previous_ecc, &previous_ecc_len))
+#else
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s#|z#", kwlist,
+			&rdata, &data_len, &previous_ecc, &previous_ecc_len))
+#endif
 		return NULL;
 
 	if (previous_ecc) {
@@ -126,7 +131,7 @@ Bch_encode(BchObject *self, PyObject *args, PyObject *kwds)
 		encode_bch(self->bch, rdata, data_len, ecc);
 	}
 
-	return PyBytes_FromStringAndSize((char *)ecc, self->bch->ecc_bytes);
+	return PyByteArray_FromStringAndSize((char *)ecc, self->bch->ecc_bytes);
 
 	Py_INCREF(Py_None);
 	return Py_None;
@@ -298,7 +303,11 @@ Bch_getattr(BchObject *self, PyObject *name)
 	unsigned int i;
 
 	Py_INCREF(name);
+#if PY_MAJOR_VERSION >= 3
 	const char *cname = PyUnicode_AsUTF8(name);
+#else
+	const char *cname = PyString_AsString(name);
+#endif
 
 	if (strcmp(cname, "syndrome") == 0) {
 		if (self->bch->syn) {
@@ -365,11 +374,8 @@ static struct PyModuleDef moduledef = {
 };
 #endif
 
-#ifndef PyMODINIT_FUNC
-#define PyMODINIT_FUNC void
-#endif
-PyMODINIT_FUNC
-PyInit_bchlib(void)
+static PyObject *
+moduleinit(void)
 {
 	PyObject *m;
 
@@ -389,3 +395,19 @@ PyInit_bchlib(void)
 	return m;
 }
 
+#ifndef PyMODINIT_FUNC
+#define PyMODINIT_FUNC void
+#endif
+#if PY_MAJOR_VERSION >= 3
+PyMODINIT_FUNC
+PyInit_bchlib(void)
+{
+	return moduleinit();
+}
+#else
+PyMODINIT_FUNC
+initbchlib(void)
+{
+	moduleinit();
+}
+#endif
