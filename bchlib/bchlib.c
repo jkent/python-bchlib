@@ -309,7 +309,9 @@ Bch_getattr(BchObject *self, PyObject *name)
 	const char *cname = PyString_AsString(name);
 #endif
 
-	if (strcmp(cname, "syndrome") == 0) {
+	if (strcmp(cname, "ecc_size") == 0) {
+		result = PyLong_FromLong(self->bch->ecc_bytes);
+	} else if (strcmp(cname, "syndromes") == 0) {
 		if (self->bch->syn) {
 			result = PyTuple_New(self->bch->t*2);
 			for (i = 0; i < self->bch->t*2; i++) {
@@ -321,8 +323,7 @@ Bch_getattr(BchObject *self, PyObject *name)
 			result = Py_None;
 			Py_INCREF(result);
 		}
-	}
-	else {
+	} else {
 		result = PyObject_GenericGetAttr((PyObject *)self, name);
 	}
 
@@ -331,7 +332,8 @@ Bch_getattr(BchObject *self, PyObject *name)
 }
 
 static PyMemberDef Bch_members[] = {
-	{"syndrome", -1, 0, READONLY|RESTRICTED, NULL},
+	{"ecc_size", -1, 0, READONLY|RESTRICTED, NULL},
+	{"syndromes", -1, 0, READONLY|RESTRICTED, NULL},
 	{NULL}
 };
 
