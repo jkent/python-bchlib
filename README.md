@@ -19,8 +19,8 @@ __Python 3:__
     $ sudo python setup.py install
 
 ## Module Documentation
-bchlib.__BCH(__ polynomial, t __)__ → bch
-> Constructor creates a BCH object with given `polynomial` and `t` bit strength. The Galois field order is automatically determined from the `polynomial`.
+bchlib.__BCH(__ polynomial, t[, reverse] __)__ → bch
+> Constructor creates a BCH object with given `polynomial` and `t` bit strength, `reverse` is an optional boolean that flips the bit order of data. The Galois field order is automatically determined from the `polynomial`.
 
 bch.__encode(__ data[, ecc] __)__ → ecc
 > Encodes `data` with an optional starting `ecc` and returns an ecc.
@@ -93,7 +93,7 @@ sha1_corrupt = hashlib.sha1(packet)
 print('sha1: %s' % (sha1_corrupt.hexdigest(),))
 
 # de-packetize
-data, ecc = packet[:-bch.ecc_size], packet[-bch.ecc_size:]
+data, ecc = packet[:-bch.ecc_bytes], packet[-bch.ecc_bytes:]
 
 # correct
 bitflips = bch.decode_inplace(data, ecc)
