@@ -19,10 +19,10 @@ def xor_ecc(ecc):
     new_ecc.append(a ^ b)
   return new_ecc
 
-ecc = bchlib.bch(ECC_POLY, ECC_BITS)
-code = ecc.encode(b'\xFF' * 512)
-code = xor_ecc(code)
+bch = bchlib.BCH(ECC_POLY, ECC_BITS)
+ecc = bch.encode(b'\xFF' * 512)
+ecc = xor_ecc(ecc)
 
-for c in code:
+for c in ecc:
   sys.stdout.write('%02X ' % c)
 sys.stdout.write('\n')

@@ -19,26 +19,41 @@ __Python 3:__
     $ sudo python setup.py install
 
 ## Module Documentation
-bchlib.__BCH(__ polynomial, bits __)__ → bch
-> Constructor creates a BCH object with given `polynomial` and `bits` strength. The Galois field order is automatically determined from the `polynomial`.
+bchlib.__BCH(__ polynomial, t __)__ → bch
+> Constructor creates a BCH object with given `polynomial` and `t` bit strength. The Galois field order is automatically determined from the `polynomial`.
 
 bch.__encode(__ data[, ecc] __)__ → ecc
 > Encodes `data` with an optional starting `ecc` and returns an ecc.
 
-bch.__correct(__ data, ecc __)__ → ( bitflips, data, ecc )
+bch.__decode(__ data, ecc __)__ → ( bitflips, data, ecc )
 > Corrects `data` using `ecc` and returns a tuple.
 
-bch.__correct_inplace(__ data, ecc __)__ → bitflips
+bch.__decode_inplace(__ data, ecc __)__ → bitflips
 > Corrects `data` using `ecc` in place, returning the number of bitflips.
 
-bch.__correct_syndromes(__ data, syndromes __)__ → ( data, num_bitflips )
-> Corrects `data` using a sequence of `syndromes`, returning a tuple.
+bch.__decode_syndromes(__ data, syndromes __)__ → ( bitflips, data )
+> Corrects `data` using a sequence of `syndromes`, of t*2 elements, returning a tuple.
 
-bch.__ecc_size__
-> A readonly field, the number of bytes an ecc takes up.
+bch.__compute_even_syndromes(__ syndromes __)__ → syndromes
+> Computes even syndromes from odd ones. Takes and returns a sequence of t*2 elements.
+
+bch.__ecc_bytes__
+> A readonly field; the number of bytes an ecc takes up.
+
+bch.__ecc_bits__
+> A readonly field; the number of bits an ecc takes up.
+
+bch.__m__
+> A readonly field; the Galois field order.
+
+bch.__n__
+> A readonly field; the maximum codeword size in bits.
 
 bch.__syndromes__
-> A readonly field, a tuple of syndromes after performing a correct operation.
+> A readonly field; a tuple of syndromes after performing a correct operation.
+
+bch.__t__
+> A readonly field; the number bit errors that can be corrected.
 
 ## Usage Example
 
@@ -81,8 +96,8 @@ print('sha1: %s' % (sha1_corrupt.hexdigest(),))
 data, ecc = packet[:-bch.ecc_size], packet[-bch.ecc_size:]
 
 # correct
-bitflip_count = bch.correct_inplace(data, ecc)
-print('bitflips: %d' % (bitflip_count))
+bitflips = bch.decode_inplace(data, ecc)
+print('bitflips: %d' % (bitflips))
 
 # packetize
 packet = data + ecc
@@ -91,5 +106,8 @@ packet = data + ecc
 sha1_corrected = hashlib.sha1(packet)
 print('sha1: %s' % (sha1_corrected.hexdigest(),))
 
-print('matched' if sha1_initial == sha1_corrected else 'failed')
+if sha1_initial.digest() == sha1_corrected.digest():
+    print('Corrected!')
+else:
+    print('Failed')
 ```
