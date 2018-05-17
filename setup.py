@@ -3,7 +3,7 @@
 
 from distutils.core import Extension, setup
 
-__version__ = '0.6'
+__version__ = '0.7'
 
 bchlib_src = ['bchlib/bchlib.c',
               'bchlib/bch.c']
@@ -15,6 +15,7 @@ bchlib_ext = Extension('bchlib', bchlib_src, depends=bchlib_dep,
 setup(name='bchlib', version = __version__,
       ext_modules = [bchlib_ext],
       description = 'A python wrapper module for the kernel BCH library.',
+      url = 'https://github.com/jkent/python-bchlib',
       author = 'Jeff Kent',
       author_email = 'jeff@jkent.net',
       maintainer = 'Jeff Kent',
@@ -30,6 +31,7 @@ setup(name='bchlib', version = __version__,
         'Programming Language :: Python :: 3',
         'Topic :: Security :: Cryptography',
         'Topic :: Software Development :: Libraries :: Python Modules',
-      ]
+      ],
+      python_requires='>=2.7',
 )
 

@@ -589,12 +589,14 @@ static PyMemberDef BCH_members[] = {
 };
 
 static PyMethodDef BCH_methods[] = {
-	{"encode", (PyCFunction)BCH_encode, METH_VARARGS, NULL},
-	{"decode", (PyCFunction)BCH_decode, METH_VARARGS, NULL},
-	{"decode_inplace", (PyCFunction)BCH_decode_inplace, METH_VARARGS, NULL},
-	{"decode_syndromes", (PyCFunction)BCH_decode_syndromes, METH_VARARGS, NULL},
+	{"encode", (PyCFunction)BCH_encode, METH_VARARGS | METH_KEYWORDS, NULL},
+	{"decode", (PyCFunction)BCH_decode, METH_VARARGS | METH_KEYWORDS, NULL},
+	{"decode_inplace", (PyCFunction)BCH_decode_inplace,
+			METH_VARARGS | METH_KEYWORDS, NULL},
+	{"decode_syndromes", (PyCFunction)BCH_decode_syndromes,
+			METH_VARARGS | METH_KEYWORDS, NULL},
 	{"compute_even_syndromes", (PyCFunction)BCH_compute_even_syndromes,
-			METH_VARARGS, NULL},
+			METH_VARARGS | METH_KEYWORDS, NULL},
 	{NULL}
 };
 
