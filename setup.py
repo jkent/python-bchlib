@@ -3,7 +3,7 @@
 
 from distutils.core import Extension, setup
 
-__version__ = '0.7'
+__version__ = '0.8'
 
 bchlib_src = ['bchlib/bchlib.c',
               'bchlib/bch.c']
