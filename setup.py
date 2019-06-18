@@ -3,7 +3,7 @@
 
 from distutils.core import Extension, setup
 
-__version__ = '0.8'
+__version__ = '0.9'
 
 bchlib_src = ['bchlib/bchlib.c',
               'bchlib/bch.c']
@@ -32,6 +32,5 @@ setup(name='bchlib', version = __version__,
         'Topic :: Security :: Cryptography',
         'Topic :: Software Development :: Libraries :: Python Modules',
       ],
-      python_requires='>=2.7',
 )
 

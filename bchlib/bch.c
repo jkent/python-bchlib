@@ -921,7 +921,7 @@ static void factor_polynomial(struct bch_control *bch, int k, struct gf_poly *f,
 			/* compute h=f/gcd(f,tk); this will modify f and q */
 			gf_poly_div(bch, f, gcd, q);
 			/* store g and h in-place (clobbering f) */
-			*h = &((struct gf_poly_deg1 *)f)[gcd->deg];
+			*h = (struct gf_poly *)&((struct gf_poly_deg1 *)f)[gcd->deg];
 			gf_poly_copy(*g, gcd);
 			gf_poly_copy(*h, q);
 		}
