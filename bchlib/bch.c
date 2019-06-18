@@ -80,7 +80,16 @@
 
 # define _BSD_SOURCE
 # define _DEFAULT_SOURCE
-# if defined(__APPLE__)
+# if (defined(_WIN32) || defined(_WIN64)) && !defined(__WINDOWS__)
+#  include <winsock2.h>
+#  if BYTE_ORDER == LITTLE_ENDIAN
+#   define htobe32(x) htonl(x)
+#  elif BYTE_ORDER == BIG_ENDIAN
+#   define htobe32(x) (x)
+#  endif
+#  define alloca(size) _alloca(size)
+#  pragma comment( lib, "ws2_32.lib")
+# elif defined(__APPLE__)
 #  include <libkern/OSByteOrder.h>
 #  define htobe32(x) OSSwapHostToBigInt32(x)
 # else
@@ -103,13 +112,6 @@
 # define DIV_ROUND_UP(a, b) ((a + b - 1) / b)
 # define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(*(arr)))
 # define cpu_to_be32(x) htobe32(x)
-# define fls(x) ({ \
-	unsigned int __tmp = x; \
-	unsigned int __count = 0; \
-	while (__tmp >>= 1) \
-		__count++; \
-	__count + 1; \
-})
 
 #endif
 
@@ -127,7 +129,7 @@
 #define BCH_ECC_BYTES(_p)      DIV_ROUND_UP(GF_M(_p)*GF_T(_p), 8)
 
 #ifndef dbg
-#define dbg(_fmt, args...)     do {} while (0)
+#define dbg(_fmt, ...)     do {} while (0)
 #endif
 
 /*
@@ -135,7 +137,7 @@
  */
 struct gf_poly {
 	unsigned int deg;    /* polynomial degree */
-	unsigned int c[0];   /* polynomial terms */
+	unsigned int c[];   /* polynomial terms */
 };
 
 /* given its degree, compute a polynomial size in bytes */
@@ -143,9 +145,19 @@ struct gf_poly {
 
 /* polynomial of degree 1 */
 struct gf_poly_deg1 {
-	struct gf_poly poly;
-	unsigned int   c[2];
+	unsigned int deg;
+	unsigned int c[2];
 };
+
+static inline unsigned int fls(unsigned int x)
+{
+	unsigned int count = 0;
+
+	while (x >>= 1) {
+		count++;
+	}
+	return count + 1;
+}
 
 /*
  * same as encode_bch(), but process input data one byte at a time
@@ -226,7 +238,7 @@ void encode_bch(struct bch_control *bch, const uint8_t *data,
 	const unsigned int l = BCH_ECC_WORDS(bch)-1;
 	unsigned int i, mlen;
 	unsigned long m;
-	uint32_t w, r[l+1];
+	uint32_t w, *r = alloca(sizeof(uint32_t) * (l+1));
 	const uint32_t * const tab0 = bch->mod8_tab;
 	const uint32_t * const tab1 = tab0 + 256*(l+1);
 	const uint32_t * const tab2 = tab1 + 256*(l+1);
@@ -237,11 +249,11 @@ void encode_bch(struct bch_control *bch, const uint8_t *data,
 		/* load ecc parity bytes into internal 32-bit buffer */
 		load_ecc8(bch, bch->ecc_buf, ecc);
 	} else {
-		memset(bch->ecc_buf, 0, sizeof(r));
+		memset(bch->ecc_buf, 0, sizeof(r[0]) * (l+1));
 	}
 
 	/* process first unaligned data bytes */
-	m = ((unsigned long)data) & 3;
+	m = ((unsigned long)(size_t)data) & 3;
 	if (m) {
 		mlen = (len < (4-m)) ? len : 4-m;
 		encode_bch_unaligned(bch, data, mlen, bch->ecc_buf);
@@ -254,7 +266,7 @@ void encode_bch(struct bch_control *bch, const uint8_t *data,
 	mlen  = len/4;
 	data += 4*mlen;
 	len  -= 4*mlen;
-	memcpy(r, bch->ecc_buf, sizeof(r));
+	memcpy(r, bch->ecc_buf, sizeof(r[0]) * (l+1));
 
 	/*
 	 * split each 32-bit word into 4 polynomials of weight 8 as follows:
@@ -280,7 +292,7 @@ void encode_bch(struct bch_control *bch, const uint8_t *data,
 
 		r[l] = p0[l]^p1[l]^p2[l]^p3[l];
 	}
-	memcpy(bch->ecc_buf, r, sizeof(r));
+	memcpy(bch->ecc_buf, r, sizeof(r[0]) * (l+1));
 
 	/* process last unaligned bytes */
 	if (len)
@@ -483,7 +495,7 @@ static int solve_linear_system(struct bch_control *bch, unsigned int *rows,
 {
 	const int m = GF_M(bch);
 	unsigned int tmp, mask;
-	int rem, c, r, p, k, param[m];
+	int rem, c, r, p, k, *param = alloca(sizeof(int) * m);
 
 	k = 0;
 	mask = 1 << m;
@@ -909,7 +921,7 @@ static void factor_polynomial(struct bch_control *bch, int k, struct gf_poly *f,
 			/* compute h=f/gcd(f,tk); this will modify f and q */
 			gf_poly_div(bch, f, gcd, q);
 			/* store g and h in-place (clobbering f) */
-			*h = &((struct gf_poly_deg1 *)f)[gcd->deg].poly;
+			*h = &((struct gf_poly_deg1 *)f)[gcd->deg];
 			gf_poly_copy(*g, gcd);
 			gf_poly_copy(*h, q);
 		}
@@ -1163,7 +1175,8 @@ static int build_deg2_base(struct bch_control *bch)
 {
 	const int m = GF_M(bch);
 	int i, j, r;
-	unsigned int sum, x, y, remaining, ak = 0, xi[m];
+	unsigned int sum, x, y, remaining, ak = 0;
+	unsigned int *xi = alloca(sizeof(unsigned int) * m);
 
 	/* find k s.t. Tr(a^k) = 1 and 0 <= k < m */
 	for (i = 0; i < m; i++) {
@@ -1177,7 +1190,7 @@ static int build_deg2_base(struct bch_control *bch)
 	}
 	/* find xi, i=0..m-1 such that xi^2+xi = a^i+Tr(a^i).a^k */
 	remaining = m;
-	memset(xi, 0, sizeof(xi));
+	memset(xi, 0, sizeof(xi[0]) * m);
 
 	for (x = 0; (x <= GF_N(bch)) && remaining; x++) {
 		y = gf_sqr(bch, x)^x;

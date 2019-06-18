@@ -28,6 +28,11 @@
 #include "bch.h"
 
 
+#if (defined(_WIN32) || defined(_WIN64)) && !defined(__WINDOWS__)
+# define alloca(size) _alloca(size)
+#endif
+
+
 typedef struct {
 	PyObject_HEAD
 	struct bch_control *bch;
@@ -35,10 +40,10 @@ typedef struct {
 } BCHObject;
 
 static void
-reverse_bytes(uint8_t *dest, const uint8_t *src, int length)
+reverse_bytes(uint8_t *dest, const uint8_t *src, size_t length)
 {
 	while(length--) {
-		*dest = ((*src * 0x0202020202ULL) & 0x010884422010ULL) % 1023;
+		*dest = (uint8_t)((*src * 0x0202020202ULL) & 0x010884422010ULL) % 1023;
 		src++;
 		dest++;
 	}
@@ -148,12 +153,12 @@ BCH_encode(BCHObject *self, PyObject *args, PyObject *kwds)
 	if (self->reversed) {
 		uint8_t *reversed = malloc(data.len);
 		reverse_bytes(reversed, data.buf, data.len);
-		encode_bch(self->bch, reversed, data.len,
+		encode_bch(self->bch, reversed, (unsigned int)data.len,
 				(uint8_t *)result_ecc->ob_bytes);
 		free(reversed);
 	}
 	else {
-		encode_bch(self->bch, data.buf, data.len,
+		encode_bch(self->bch, data.buf, (unsigned int)data.len,
 				(uint8_t *)result_ecc->ob_bytes);
 	}
 
@@ -174,7 +179,7 @@ BCH_decode(BCHObject *self, PyObject *args, PyObject *kwds)
 {
 	static char *kwlist[] = {"data", "ecc", NULL};
 	Py_buffer data, ecc;
-	unsigned int errloc[self->bch->t];
+	unsigned int *errloc = alloca(sizeof(unsigned int) * self->bch->t);
 	PyByteArrayObject *result_data = NULL;
 	PyByteArrayObject *result_ecc = NULL;
 	PyObject *result = NULL;
@@ -234,8 +239,9 @@ BCH_decode(BCHObject *self, PyObject *args, PyObject *kwds)
 #endif
 	result_ecc->ob_exports = 0;
 
-	int nerr = decode_bch(self->bch, (uint8_t *)result_data->ob_bytes, data.len,
-			(uint8_t *)result_ecc->ob_bytes, NULL, NULL, errloc);
+	int nerr = decode_bch(self->bch, (uint8_t *)result_data->ob_bytes,
+			(unsigned int)data.len, (uint8_t *)result_ecc->ob_bytes, NULL, NULL,
+			errloc);
 
 	if (nerr < 0) {
 		if (nerr == -EINVAL) {
@@ -288,7 +294,7 @@ BCH_decode_inplace(BCHObject *self, PyObject *args, PyObject *kwds)
 {
 	static char *kwlist[] = {"data", "ecc", NULL};
 	Py_buffer data, ecc;
-	unsigned int errloc[self->bch->t];
+	unsigned int *errloc = NULL;
 	PyObject *result = NULL;
 
 #if PY_MAJOR_VERSION >= 3
@@ -318,8 +324,8 @@ BCH_decode_inplace(BCHObject *self, PyObject *args, PyObject *kwds)
 		reverse_bytes(data.buf, data.buf, data.len);
 	}
 
-	int nerr = decode_bch(self->bch, data.buf, data.len, ecc.buf, NULL, NULL,
-				errloc);
+	int nerr = decode_bch(self->bch, data.buf, (unsigned int)data.len, ecc.buf,
+				NULL, NULL, errloc);
 
 	if (nerr < 0) {
 		if (nerr == -EINVAL) {
@@ -365,8 +371,8 @@ BCH_decode_syndromes(BCHObject *self, PyObject *args, PyObject *kwds)
 	static char *kwlist[] = {"data", "syndromes", NULL};
 	Py_buffer data;
 	PyObject *po_syndromes;
-	unsigned int syndromes[self->bch->t];
-	unsigned int errloc[self->bch->t];
+	unsigned int *syndromes = alloca(sizeof(unsigned int) * self->bch->t);
+	unsigned int *errloc = alloca(sizeof(unsigned int) * self->bch->t);
 	PyByteArrayObject *result_data = NULL;
 	PyObject *result = NULL;
 
@@ -433,8 +439,8 @@ BCH_decode_syndromes(BCHObject *self, PyObject *args, PyObject *kwds)
 		Py_DECREF(value);
 	}
  
-	int nerr = decode_bch(self->bch, NULL, data.len, NULL, NULL, syndromes,
-			errloc);
+	int nerr = decode_bch(self->bch, NULL, (unsigned int)data.len, NULL, NULL,
+			syndromes, errloc);
 	Py_DECREF(po_syndromes);
 
 	if (nerr < 0) {
