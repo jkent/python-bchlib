@@ -294,7 +294,7 @@ BCH_decode_inplace(BCHObject *self, PyObject *args, PyObject *kwds)
 {
 	static char *kwlist[] = {"data", "ecc", NULL};
 	Py_buffer data, ecc;
-	unsigned int *errloc = NULL;
+	unsigned int *errloc = alloca(sizeof(unsigned int) * self->bch->t);
 	PyObject *result = NULL;
 
 #if PY_MAJOR_VERSION >= 3
