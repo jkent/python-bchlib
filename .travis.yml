@@ -1,0 +1,56 @@
+language: python
+env:
+  global:
+  - PYTHONUNBUFFERED=1
+  - TWINE_USERNAME=jkent
+  # TWINE_PASSWORD
+  - secure: CVLLamNJjJU8rJhdVweaAUu8RlswgjB1bvX2ffavY27RIYsnCM1hokCKK6EjrpDDrJ9EjL3JurkQ7HTaKh+rdQmeeEF8CJJNfUv+nt5lKj1/GbMNoOEkSeGMCIfUAIdHlOPBXrlRdx0oLrVe/nc2rM+Rl/8VuTOf97/5przctxzjj0V6KatMSSBJvqWHHu3fOl7vmYTK26XRa3dChBkGJVLh6JiYQ2zi65wcFAUOzZ02U015iTAhvmkVmunWWmPE/6bUVzkj4zxVuzLcWj5bXDdWSW3XFUobFxKZL6fiaUafiY3orZ8HjW07nQJkQVEIhjIwnDB8JZNSFwYo77KL18MZNTUiitKgSzBmIPYcwAKfAOoMGWhpp+xcRVz8h8u1a8HSPzL3NbKybG3JteIhvnFxjcn8gTl+l/RTgsrwZA6iCWPHJYuQyUhEksXxBcRmreYguLUjiyIZegS/OpUKPJ1LzKppfijwjh69KFCxl+np70d9SGZ6iNCyemtzrgJUBcLHBa1/oTAkXTOTCqEVmuyR1kag0a4f6GIfsmlJLqOW0mSEqw/8YomGwdcemICcsxgZH6Un+43bD0/X/R0QpJuS5HtzgBKeB5CF/A+4H012hg90xWkD4JEZhZfAcx4Jrq1jhE89FvBISyboDs5y40FRtkSt/PgbMUoqphmnbKo=
+  - AWS_ACCESS_KEY_ID=AKIA5LW6HA4HS6R3LISB 
+  # AWS_SECRET_ACCESS_KEY
+  - secure: AE9HI5X8uRGNKUU3ClMdYPlYTwBZ7F7i/eGT5+nVy7rwvuRG0VBFsS2CyYejqU7ZnP0LgjYkqdnAuMbHZhpYNFHxfHaTVPCO+58Ic3SSHdRiNe3PuyUoz6FlrOtlauabspaIuAb7leHrHeXcLQ6f/28iiMlw3oXMGq5QUeDwx1p6kxhgBCr5A9xOPtSHgPcR+9tE8FYuAUhxUXu28ppamWcOb1+m8zEVfySqjdWyrTWdAXYAQqG5FWM6OA6YGQn6Pxtkpenl9WRPgl+haIuqhDg+txj/YNth0YIoVFwC6o39HS4dpcQkznusJksUo4KVC/SYzjbWEiPHJjp82Y2qpiW2LXyPSGTxiPz8jYL0+G6eSpzGqXecUOFl0+LO7PEcf6R4nMZhwOiLXwdv3QiEZD+MwQchOfAI5ZJe32K4JyaF/tIGz5OFp+5OIvXhLKN+jfn+RtDZg/SrjP+zq74P7H3EAWhfbfiK+LnimlPjElxIG1Qm7/1G6S66aFFO7k0F66uYdGsS5g/exsb1A0OT8sJfJb70j9/wYn8zU04rd5O2Z5XhrPT809hjzbaMmFcOCVNaBg5kpdPN2jYhiC06ErTDQXOIiSV0dxhusIcO0WnW4Uv87MPSTlEDPl5zblgRHpx+1MJIv8ikTEaUB/Q+5hQ3VsQspKtS+mugjf14llM=
+
+stages:
+- name: test
+- name: build sdist
+  if: type = push AND tag =~ ^vd+\.\d+\.\d+
+- name: deploy to pypi
+  if: type = push AND tag =~ ^vd+\.\d+\.\d+
+
+python:
+- '2.7'
+- '3.5'
+- '3.6'
+- '3.7'
+
+install:
+- pip install -e .[test]
+
+script: pytest
+jobs:
+  fast_finish: true
+  include:
+  - stage: build sdist
+    before_install: &setup_s3
+    - pip install awscli
+    - mkdir dist
+    install: skip
+    script: python setup.py sdist
+    after_success:
+    - aws s3 rm --recursive s3://python-bchlib/dist
+    - aws s3 sync dist s3://python-bchlib/dist
+
+  - stage: build wheels
+    env: OS=LINUX
+    sudo: required
+    before_install: *setup_s3
+    install: skip
+    script: docker run --rm -it -v $(pwd):/io -w /io quay.io/pypa/manylinux1_x86_64 .ci/build_linux_wheels.sh
+    after_success: aws s3 sync wheelhouse s3://python-bchlib/dist
+
+  - stage: deploy to pypi
+    before_install: *setup_s3
+    install: pip install twine
+    script:
+    - aws s3 sync s3://python-bchlib/dist dist
+    - twine upload --repository-url https://test.pypi.org/legacy/ dist/*
+    - aws s3 rm --recursive s3://python-bchlib/dist
