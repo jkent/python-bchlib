@@ -4,19 +4,16 @@ python-bchlib [![Build Status](https://travis-ci.com/jkent/python-bchlib.svg?bra
 This is a python module for encoding and correcting data using [BCH codes](https://en.wikipedia.org/wiki/BCH_code).
 
 ## Requirements
-  * python3 or python2.7
-  * python3-dev or python-dev
+  For Windows, python3.5 or greater required.<br>
+  For Linux and MacOS, python2.7 or python3.4 or greater required.
 
-## Building and Installing
-__Python 3:__
+## Installing the latest release:
+    $ pip install bchlib
 
-    $ python3 setup.py build
-    $ sudo python3 setup.py install
+## Installing from source:
+  Make sure you have python-dev setup.  For Windows, this means you need Visual Studio 2015.
 
- __Python 2.7:__
-
-    $ python setup.py build
-    $ sudo python setup.py install
+  $ pip install .
 
 ## Module Documentation
 bchlib.__BCH(__ polynomial, t[, reverse] __)__ → bch
