@@ -22,7 +22,6 @@
 #include <structmember.h>
 
 #include <errno.h>
-#include <stdbool.h>
 #include <string.h>
 
 #include "bch.h"
@@ -36,7 +35,7 @@
 typedef struct {
 	PyObject_HEAD
 	struct bch_control *bch;
-	bool reversed;
+	int reversed;
 } BCHObject;
 
 static void

@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from distutils.core import Extension, setup
+from setuptools import Extension, setup
 
-__version__ = '0.10'
+__version__ = '0.12.0'
 
 bchlib_src = ['bchlib/bchlib.c',
               'bchlib/bch.c']

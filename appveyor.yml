@@ -1,0 +1,24 @@
+version: 1.0.{build}
+clone_depth: 50  # The same depth Travis has
+
+environment:
+  matrix:
+    - PYTHON: "C:\\Python35"
+    - PYTHON: "C:\\Python35-x64"
+    - PYTHON: "C:\\Python36"
+    - PYTHON: "C:\\Python36-x64"
+    - PYTHON: "C:\\Python37"
+    - PYTHON: "C:\\Python37-x64"
+
+install:
+  # We need wheel installed to build wheels
+  - "%PYTHON%\\python.exe -m pip install wheel"
+
+build: off
+
+after_test:
+  - "%PYTHON%\\python.exe setup.py bdist_wheel"
+
+artifacts:
+  # bdist_wheel puts your built wheel in the dist directory
+  - path: dist\*

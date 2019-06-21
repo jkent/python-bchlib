@@ -1,4 +1,4 @@
-python-bchlib
+python-bchlib [![Build Status](https://travis-ci.com/jkent/python-bchlib.svg?branch=master)](https://travis-ci.com/jkent/python-bchlib)
 =============
 
 This is a python module for encoding and correcting data using [BCH codes](https://en.wikipedia.org/wiki/BCH_code).

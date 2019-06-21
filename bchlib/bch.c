@@ -149,6 +149,7 @@ struct gf_poly_deg1 {
 	unsigned int c[2];
 };
 
+#if !defined(__APPLE__)
 static inline unsigned int fls(unsigned int x)
 {
 	unsigned int count = 0;
@@ -158,6 +159,7 @@ static inline unsigned int fls(unsigned int x)
 	}
 	return count + 1;
 }
+#endif
 
 /*
  * same as encode_bch(), but process input data one byte at a time
