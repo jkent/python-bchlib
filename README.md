@@ -13,7 +13,7 @@ This is a python module for encoding and correcting data using [BCH codes](https
 ## Installing from source:
   Make sure you have python-dev setup.  For Windows, this means you need Visual Studio 2015.
 
-  $ pip install .
+    $ pip install .
 
 ## Module Documentation
 bchlib.__BCH(__ polynomial, t[, reverse] __)__ → bch
