@@ -1,5 +1,10 @@
+.cproject
+.project
+.pydevproject
+.settings
+.vscode/
 build/
 dist/
 *.egg-info/
-*.so
+__pycache__/
 MANIFEST

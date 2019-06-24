@@ -11,7 +11,7 @@ This is a python module for encoding and correcting data using [BCH codes](https
     $ pip install bchlib
 
 ## Installing from source:
-  Make sure you have python-dev setup.  For Windows, this means you need Visual Studio 2015.
+  Make sure you have python-dev setup.  For Windows, this means you need [Visual Studio 2015](https://stackoverflow.com/a/44290942/6844002).
 
     $ pip install .
 
