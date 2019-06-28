@@ -3,11 +3,11 @@
 
 from setuptools import Extension, setup
 
-__version__ = '0.13.0'
+__version__ = '0.14.0'
 
-bchlib_src = ['bchlib/bchlib.c',
-              'bchlib/bch.c']
-bchlib_dep = ['bchlib/bch.h']
+bchlib_src = ['src/bchlib.c',
+              'src/bch.c']
+bchlib_dep = ['src/bch.h']
 
 bchlib_ext = Extension('bchlib', bchlib_src, depends=bchlib_dep,
                        extra_compile_args=['-std=c99'])

@@ -18,9 +18,9 @@ env:
 stages:
   - name: test
   - name: build sdist
-    if: type = push AND tag =~ ^v\d+\.\d+\.\d+
+    if: type = push AND tag =~ ^v\d+\.\d+\.\d+ OR branch = testing
   - name: build wheels
-    if: type = push AND tag =~ ^v\d+\.\d+\.\d+
+    if: type = push AND tag =~ ^v\d+\.\d+\.\d+ OR branch = testing
   - name: deploy to pypi
     if: type = push AND tag =~ ^v\d+\.\d+\.\d+
 

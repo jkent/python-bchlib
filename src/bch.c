@@ -82,18 +82,20 @@
 # define _DEFAULT_SOURCE
 # if (defined(_WIN32) || defined(_WIN64)) && !defined(__WINDOWS__)
 #  include <winsock2.h>
-#  if BYTE_ORDER == LITTLE_ENDIAN
-#   define htobe32(x) htonl(x)
-#  elif BYTE_ORDER == BIG_ENDIAN
-#   define htobe32(x) (x)
-#  endif
 #  define alloca(size) _alloca(size)
 #  pragma comment( lib, "ws2_32.lib")
 # elif defined(__APPLE__)
 #  include <libkern/OSByteOrder.h>
 #  define htobe32(x) OSSwapHostToBigInt32(x)
 # else
-#  include <endian.h>
+#  include <arpa/inet.h> 
+# endif
+# if !defined(htobe32)
+#  if BYTE_ORDER == LITTLE_ENDIAN
+#   define htobe32(x) htonl(x)
+#  elif BYTE_ORDER == BIG_ENDIAN
+#   define htobe32(x) (x)
+#  endif
 # endif
 # include <errno.h>
 # include <stdint.h>
