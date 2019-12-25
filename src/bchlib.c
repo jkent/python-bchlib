@@ -42,7 +42,7 @@ static void
 reverse_bytes(uint8_t *dest, const uint8_t *src, size_t length)
 {
 	while(length--) {
-		*dest = (uint8_t)((*src * 0x0202020202ULL) & 0x010884422010ULL) % 1023;
+		*dest = (uint8_t)(((*src * 0x0202020202ULL) & 0x010884422010ULL) % 1023);
 		src++;
 		dest++;
 	}
