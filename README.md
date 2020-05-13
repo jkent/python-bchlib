@@ -1,7 +1,7 @@
 python-bchlib [![Build Status](https://travis-ci.com/jkent/python-bchlib.svg?branch=master)](https://travis-ci.com/jkent/python-bchlib)
 =============
 
-This is a python module for encoding and correcting data using [BCH codes](https://en.wikipedia.org/wiki/BCH_code).
+This is a python module for encoding and correcting data using [BCH codes](https://en.wikipedia.org/wiki/BCH_code).  This is a fork of https://github.com/jkent/python-bchlib that extends support for Galois Field orders up to 31 (previous implementation supported up to 15).
 
 ## Requirements
   For Windows, python3.5 or greater required.<br>

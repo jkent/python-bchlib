@@ -576,7 +576,7 @@ static int find_affine4_roots(struct bch_control *bch, unsigned int a,
 {
 	int i, j, k;
 	const int m = GF_M(bch);
-	unsigned int mask = 0xff, t, rows[16] = {0,};
+	unsigned int mask = 0xffff, t, rows[32] = {0,};
 
 	j = a_log(bch, b);
 	k = a_log(bch, a);
@@ -591,10 +591,10 @@ static int find_affine4_roots(struct bch_control *bch, unsigned int a,
 		k += 2;
 	}
 	/*
-	 * transpose 16x16 matrix before passing it to linear solver
-	 * warning: this code assumes m < 16
+	 * transpose 32x32 matrix before passing it to linear solver
+	 * warning: this code assumes m < 32
 	 */
-	for (j = 8; j != 0; j >>= 1, mask ^= (mask << j)) {
+	for (j = 16; j != 0; j >>= 1, mask ^= (mask << j)) {
 		for (k = 0; k < 16; k = (k+j+1) & ~j) {
 			t = ((rows[k] >> j)^rows[k+j]) & mask;
 			rows[k] ^= (t << j);
@@ -1320,7 +1320,7 @@ struct bch_control *init_bch(int m, int t, unsigned int prim_poly)
 	struct bch_control *bch = NULL;
 
 	const int min_m = 5;
-	const int max_m = 15;
+	const int max_m = 31;
 
 	/* default primitive polynomials */
 	static const unsigned int prim_poly_tab[] = {
@@ -1338,9 +1338,9 @@ struct bch_control *init_bch(int m, int t, unsigned int prim_poly)
 #endif
 	if ((m < min_m) || (m > max_m))
 		/*
-		 * values of m greater than 15 are not currently supported;
-		 * supporting m > 15 would require changing table base type
-		 * (uint16_t) and a small patch in matrix transposition
+		 * values of m greater than 31 are not currently supported;
+		 * supporting m > 31 would require changing table base type
+		 * (uint32_t) and a small patch in matrix transposition
 		 */
 		goto fail;
 

@@ -57,8 +57,8 @@ struct bch_control {
 	unsigned int    ecc_bits;
 	unsigned int    ecc_bytes;
 /* private: */
-	uint16_t       *a_pow_tab;
-	uint16_t       *a_log_tab;
+	uint32_t       *a_pow_tab;
+	uint32_t       *a_log_tab;
 	uint32_t       *mod8_tab;
 	uint32_t       *ecc_buf;
 	uint32_t       *ecc_buf2;
