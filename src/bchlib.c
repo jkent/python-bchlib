@@ -97,6 +97,8 @@ BCH_init(BCHObject *self, PyObject *args, PyObject *kwds)
         return -1;
     }
 
+    memset(self->bch->syn, 0, sizeof(unsigned int) * 2*self->bch->t);
+
     return 0;
 }
 
