@@ -50,7 +50,7 @@ BCH_init(BCHObject *self, PyObject *args, PyObject *kwds)
 {
     int t, m = -1;
     unsigned int prim_poly = 0;
-    bool swap_bits = false;
+    int swap_bits = false;
 
     static char *kwlist[] = {"t", "prim_poly", "m", "swap_bits", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|Iip", kwlist, &t,
