@@ -1,23 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/*
- * Python C module for BCH encoding/decoding.
- *
- * Copyright (c) 2013, 2017-2018, 2021 Jeff Kent <jeff@jkent.net>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published by
- * the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- */
+/* Python C module for BCH encoding/decoding/correcting. */
 
 #include <Python.h>
 #include <structmember.h>
@@ -37,7 +19,7 @@ typedef struct {
     PyObject_HEAD
     struct bch_control *bch;
     uint8_t *ecc;
-    unsigned int msg_len;
+    unsigned int data_len;
     unsigned int *errloc;
     int nerr;
 } BCHObject;
@@ -67,33 +49,51 @@ static int
 BCH_init(BCHObject *self, PyObject *args, PyObject *kwds)
 {
     int t, m = -1;
-    unsigned int poly = 0;
+    unsigned int prim_poly = 0;
     bool swap_bits = false;
 
-    static char *kwlist[] = {"t", "poly", "m", "swap_bits", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|Iip", kwlist, &t, &poly,
-            &m, &swap_bits)) {
+    static char *kwlist[] = {"t", "prim_poly", "m", "swap_bits", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|Iip", kwlist, &t,
+            &prim_poly, &m, &swap_bits)) {
         return -1;
     }
 
-    if (m == -1 && poly == 0) {
+    if (m == -1 && prim_poly == 0) {
         PyErr_SetString(PyExc_ValueError,
                 "'m' and/or 'poly' must be provided");
         return -1;
     }
 
     if (m == -1) {
-        unsigned int tmp = poly;
+        unsigned int tmp = prim_poly;
         m = 0;
         while (tmp >>= 1) {
             m++;
         }
     }
 
-    self->bch = bch_init(m, t, poly, swap_bits);
+    self->bch = bch_init(m, t, prim_poly, swap_bits);
     if (!self->bch) {
         PyErr_SetString(PyExc_RuntimeError,
                 "unable to inititalize bch, invalid parameters?");
+        return -1;
+    }
+
+    self->ecc = calloc(1, self->bch->ecc_bytes);
+    if (!self->ecc) {
+        bch_free(self->bch);
+        self->bch = NULL;
+        PyErr_SetString(PyExc_MemoryError, "unable to allocate ecc buffer");
+        return -1;
+    }
+
+    self->errloc = calloc(1, sizeof(unsigned int) * self->bch->t);
+    if (!self->errloc) {
+        bch_free(self->bch);
+        self->bch = NULL;
+        free(self->ecc);
+        self->ecc = NULL;
+        PyErr_SetString(PyExc_MemoryError, "unable to allocate errloc buffer");
         return -1;
     }
 
@@ -112,13 +112,6 @@ BCH_encode(BCHObject *self, PyObject *args, PyObject *kwds)
         return NULL;
     }
 
-    if (!self->ecc) {
-        self->ecc = malloc(self->bch->ecc_bytes);
-        if (!self->ecc) {
-            return NULL;
-        }
-    }
-
     if (ecc.buf) {
         if (ecc.len != self->bch->ecc_bytes) {
             PyErr_Format(PyExc_ValueError, "ecc length must be %d bytes",
@@ -132,7 +125,9 @@ BCH_encode(BCHObject *self, PyObject *args, PyObject *kwds)
 
     bch_encode(self->bch, (uint8_t *) data.buf, (unsigned int) data.len,
             self->ecc);
-    Py_RETURN_NONE;
+
+    return PyBytes_FromStringAndSize((const char *)self->ecc,
+            self->bch->ecc_bytes);
 }
 
 static PyObject *
@@ -142,19 +137,15 @@ BCH_decode(BCHObject *self, PyObject *args, PyObject *kwds)
     Py_buffer recv_ecc = {0};
     Py_buffer calc_ecc = {0};
     PyObject *syn = NULL;
-    int msg_len = 0;
 
-    static char *kwlist[] = {"data", "recv_ecc", "calc_ecc", "syn", "msg_len",
-            NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|y*y*y*Oi", kwlist, &data,
-            &recv_ecc, &calc_ecc, &syn, &msg_len)) {
+    static char *kwlist[] = {"data", "recv_ecc", "calc_ecc", "syn", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|y*y*y*O", kwlist, &data,
+            &recv_ecc, &calc_ecc, &syn)) {
         return NULL;
     }
 
-    if (msg_len > 0) {
-        self->msg_len = msg_len;
-    } else {
-        self->msg_len += data.len;
+    if (data.buf && self->data_len <= 0) {
+        self->data_len = data.len;
     }
 
     if (recv_ecc.buf && recv_ecc.len != self->bch->ecc_bytes) {
@@ -178,14 +169,14 @@ BCH_decode(BCHObject *self, PyObject *args, PyObject *kwds)
             return NULL;
         }
 
-        if (PySequence_Length(syn) != self->bch->t * 2) {
+        if (PySequence_Length(syn) != 2*self->bch->t) {
             PyErr_Format(PyExc_ValueError, "'syn' must have %d elements",
-                    self->bch->t * 2);
+                    2*self->bch->t);
             Py_DECREF(syn);
             return NULL;
         }
 
-        for (unsigned int i = 0; i < self->bch->t * 2; i++) {
+        for (unsigned int i = 0; i < 2*self->bch->t; i++) {
             PyObject *value = PySequence_GetItem(syn, i);
             Py_INCREF(value);
             long ltmp = PyLong_AsLong(value);
@@ -201,17 +192,8 @@ BCH_decode(BCHObject *self, PyObject *args, PyObject *kwds)
         Py_DECREF(syn);
     }
 
-    if (!self->errloc) {
-        self->errloc = malloc(sizeof(unsigned int) * self->bch->t);
-        if (!self->errloc) {
-            return NULL;
-        }
-    }
-
-    self->nerr = bch_decode(self->bch, data.buf,
-            (unsigned int) msg_len ? msg_len : data.len,
-            recv_ecc.buf, calc_ecc.buf, syn ? self->bch->syn : NULL,
-            self->errloc);
+    self->nerr = bch_decode(self->bch, data.buf, self->data_len, recv_ecc.buf,
+            calc_ecc.buf, syn ? self->bch->syn : NULL, self->errloc);
 
     if (self->nerr < 0) {
         if (self->nerr == -EINVAL) {
@@ -235,12 +217,8 @@ BCH_correct(BCHObject *self, PyObject *args, PyObject *kwds)
     PyObject *result = NULL;
 
     static char *kwlist[] = {"data", "ecc", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "y*|y*", kwlist, &data,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|y*y*", kwlist, &data,
             &ecc)) {
-        goto cleanup;
-    }
-
-    if (self->nerr < 0) {
         goto cleanup;
     }
 
@@ -254,21 +232,31 @@ BCH_correct(BCHObject *self, PyObject *args, PyObject *kwds)
         goto cleanup;
     }
 
+    if (self->nerr < 0) {
+        goto done;
+    }
+
     for (int i = 0; i < self->nerr; i++) {
         unsigned int bitnum = self->errloc[i];
-        if (bitnum >= (self->msg_len + self->bch->ecc_bytes) * 8) {
+        if (bitnum >= (self->data_len + self->bch->ecc_bytes) * 8) {
             PyErr_SetString(PyExc_IndexError, "uncorrectable error");
             return NULL;
         }
         unsigned int byte = bitnum / 8;
         unsigned char bit = 1 << (bitnum & 7);
-        if (byte < self->msg_len) {
-            ((uint8_t *) data.buf)[byte] ^= bit;
-        } else if (ecc.buf && !ecc.readonly) {
-            ((uint8_t *) ecc.buf)[byte - self->msg_len] ^= bit;
+
+        if (byte < self->data_len) {
+            if (data.buf && !data.readonly) {
+                ((uint8_t *) data.buf)[byte] ^= bit;
+            }
+        } else {
+            if (ecc.buf && !ecc.readonly) {
+                ((uint8_t *) ecc.buf)[byte - self->data_len] ^= bit;
+            }
         }
     }
 
+done:
     result = Py_None;
     Py_IncRef(Py_None);
 
@@ -283,47 +271,38 @@ BCH_compute_even_syn(BCHObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *syn;
     PyObject *result = NULL;
+    unsigned int result_syn[2*self->bch->t];
 
     static char *kwlist[] = {"syn", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist, &syn)) {
         return result;
     }
 
-    Py_INCREF(syn);
-
     if (!PySequence_Check(syn)) {
         PyErr_SetString(PyExc_TypeError, "'syn' must be a sequence type");
-        Py_DECREF(syn);
         return result;
     }
 
-    if (PySequence_Length(syn) != self->bch->t * 2) {
+    if (PySequence_Length(syn) != 2*self->bch->t) {
         PyErr_Format(PyExc_ValueError, "'syn' must have %d elements",
-                self->bch->t * 2);
-        Py_DECREF(syn);
+                2*self->bch->t);
         return result;
     }
 
-    for (unsigned int i = 0; i < self->bch->t * 2; i++) {
+    for (unsigned int i = 0; i < 2*self->bch->t; i++) {
         PyObject *value = PySequence_GetItem(syn, i);
-        Py_INCREF(value);
-        long ltmp = PyLong_AsLong(value);
-        if (ltmp == -1 && PyErr_Occurred()) {
-            Py_DECREF(value);
-            Py_DECREF(syn);
+        long tmp = PyLong_AsLong(value);
+        if (tmp == -1 && PyErr_Occurred()) {
             return result;
         }
-        self->bch->syn[i] = ltmp;
-        Py_DECREF(value);
+        result_syn[i] = tmp;
     }
 
-    Py_DECREF(syn);
+    bch_compute_even_syndromes(self->bch, result_syn);
 
-    bch_compute_even_syndromes(self->bch, self->bch->syn);
-
-    result = PyTuple_New(self->bch->t * 2);
-    for (unsigned int i = 0; i < self->bch->t * 2; i++) {
-        PyObject *value = PyLong_FromLong(self->bch->syn[i]);
+    result = PyTuple_New(2*self->bch->t);
+    for (unsigned int i = 0; i < 2*self->bch->t; i++) {
+        PyObject *value = PyLong_FromLong(result_syn[i]);
         PyTuple_SetItem(result, i, value);
     }
 
@@ -336,18 +315,20 @@ BCH_getattr(BCHObject *self, PyObject *name)
     PyObject *value;
     PyObject *result = NULL;
 
-    Py_INCREF(name);
+    if (!PyUnicode_Check(name)) {
+        PyErr_Format(PyExc_TypeError,
+                "attribute name must be a string, not '%.200s'",
+                Py_TYPE(name)->tp_name);
+        return NULL;
+    }
     const char *cname = PyUnicode_AsUTF8(name);
 
-    if (strcmp(cname, "bits") == 0) {
+    if (strcmp(cname, "ecc_bits") == 0) {
         result = PyLong_FromLong(self->bch->ecc_bits);
-    } else if (strcmp(cname, "bytes") == 0) {
+    } else if (strcmp(cname, "ecc_bytes") == 0) {
         result = PyLong_FromLong(self->bch->ecc_bytes);
-    } else if (strcmp(cname, "ecc") == 0) {
-        result = PyBytes_FromStringAndSize((const char *) self->ecc,
-                self->bch->ecc_bytes);
     } else if (strcmp(cname, "errloc") == 0) {
-        result = PyTuple_New(self->bch->t);
+        result = PyTuple_New(self->nerr <= 0 ? 0 : self->nerr);
         for (int i = 0; i < self->nerr; i++) {
             value = PyLong_FromLong(self->errloc[i]);
             PyTuple_SetItem(result, i, value);
@@ -356,10 +337,12 @@ BCH_getattr(BCHObject *self, PyObject *name)
         result = PyLong_FromLong(self->bch->m);
     } else if (strcmp(cname, "n") == 0) {
         result = PyLong_FromLong(self->bch->n);
+    } else if (strcmp(cname, "prim_poly") == 0) {
+        result = PyLong_FromLong(self->bch->prim_poly);
     } else if (strcmp(cname, "syn") == 0) {
         if (self->bch->syn) {
-            result = PyTuple_New(self->bch->t * 2);
-            for (unsigned int i = 0; i < self->bch->t * 2; i++) {
+            result = PyTuple_New(2*self->bch->t);
+            for (unsigned int i = 0; i < 2*self->bch->t; i++) {
                 value = PyLong_FromLong(self->bch->syn[i]);
                 PyTuple_SetItem(result, i, value);
             }
@@ -374,30 +357,52 @@ BCH_getattr(BCHObject *self, PyObject *name)
         result = PyObject_GenericGetAttr((PyObject *)self, name);
     }
 
-    Py_DECREF(name);
     return result;
 }
 
 static PyMemberDef BCH_members[] = {
-    {"bits", -1, 0, READONLY|RESTRICTED},
-    {"bytes", -1, 0, READONLY|RESTRICTED},
-    {"ecc", -1, 0, READONLY|RESTRICTED},
-    {"errloc", -1, 0, READONLY|RESTRICTED},
-    {"m", -1, 0, READONLY|RESTRICTED},
-    {"msg_len", T_UINT, offsetof(BCHObject, msg_len), 0},
-    {"n", -1, 0, READONLY|RESTRICTED},
-    {"nerr", T_INT, offsetof(BCHObject, nerr), READONLY},
-    {"syn", -1, 0, READONLY|RESTRICTED},
-    {"t", -1, 0, READONLY|RESTRICTED},
+    {"data_len", T_UINT, offsetof(BCHObject, data_len), 0,
+            "Read/write; decode data length.  Set value before decoding."},
+    {"ecc_bits", -1, 0, READONLY|RESTRICTED,
+            "Readonly; number of ecc bits."},
+    {"ecc_bytes", -1, 0, READONLY|RESTRICTED,
+            "Readonly; number of ecc bytes."},
+    {"errloc", -1, 0, READONLY|RESTRICTED,
+            "Readonly; tuple of error bit locations."},
+    {"m", -1, 0, READONLY|RESTRICTED,
+            "Readonly; Galois field order."},
+    {"n", -1, 0, READONLY|RESTRICTED,
+            "Readonly; maximum codeword size in bits."},
+    {"prim_poly", -1, 0, READONLY|RESTRICTED,
+            "Readonly; primitive polynomial for bch operations."},
+    {"syn", -1, 0, READONLY|RESTRICTED,
+            "Readonly; a tuple of syndromes after performing a decode()."},
+    {"t", -1, 0, READONLY|RESTRICTED,
+            "Readonly; the number of bit errors that can be corrected."},
     {NULL}
 };
 
 static PyMethodDef BCH_methods[] = {
-    {"encode", (PyCFunction) BCH_encode, METH_VARARGS | METH_KEYWORDS, NULL},
-    {"decode", (PyCFunction) BCH_decode, METH_VARARGS | METH_KEYWORDS, NULL},
-    {"correct", (PyCFunction) BCH_correct, METH_VARARGS | METH_KEYWORDS, NULL},
+    {"encode", (PyCFunction) BCH_encode, METH_VARARGS | METH_KEYWORDS,
+            "\b\b\b\bencode(data[, ecc]) → ecc\nEncodes 'data' with an "
+            "optional starting 'ecc'.  Returns the calculated\necc."},
+    {"decode", (PyCFunction) BCH_decode, METH_VARARGS | METH_KEYWORDS,
+            "\b\b\b\bdecode(data=None, recv_ecc=None, calc_ecc=None, "
+            "syn=None) → nerr\nCalculates error locations and returns "
+            "the number of errors found or\nnegative if decoding failed.\n\n"
+            "There are four ways that 'decode' can function by providing "
+            "different\ninput parameters:\n\n    'data' and 'recv_ecc'\n"
+            "    'recv_ecc' and 'calc_ecc'\n    'calc_ecc' (as recv_ecc XOR "
+            "calc_ecc)\n    'syn' (a sequence of 2*t values)\n\nbch->len "
+            "SHOULD be set before calling this function."},
+    {"correct", (PyCFunction) BCH_correct, METH_VARARGS | METH_KEYWORDS,
+            "\b\b\b\bcorrect(data=None, ecc=None) → None\nCorrects 'data' "
+            "and 'ecc' if provided.  Buffers must not be readonly."},
     {"compute_even_syn", (PyCFunction) BCH_compute_even_syn,
-            METH_VARARGS | METH_KEYWORDS, NULL},
+            METH_VARARGS | METH_KEYWORDS,
+            "\b\b\b\bcompute_even_syn(syn) → syn\nComputes even syndromes "
+            "from odd ones. Takes a sequence of 2*t values\nand returns a "
+            "tuple of 2*t elements."},
     {NULL}
 };
 
@@ -408,7 +413,14 @@ static PyTypeObject BCHType = {
     .tp_dealloc   = (destructor) BCH_dealloc,
     .tp_getattro  = (getattrofunc) BCH_getattr,
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
-    .tp_doc       = "BCH Encoder/Decoder",
+    .tp_doc       = "BCH Encoder/Decoder\n\n"
+"__init__(t, poly=None, m=None, swap_bits=False) → bch\n"
+"    Constructor creates a BCH object with given 't' bit strength. At\n"
+"    least one of 'poly' and/or 'm' must be provided. If 'poly' is provided\n"
+"    but 'm' (Galois field order) is not, 'm' will be calculated\n"
+"    automatically.  If 'm' between 5 and 15 inclusive is provided, 'poly'\n"
+"    will be selected automatically.  The 'swap_bits' parameter will reverse\n"
+"    the bit order within data and syndrome bytes.",
     .tp_methods   = BCH_methods,
     .tp_members   = BCH_members,
     .tp_init      = (initproc) BCH_init,

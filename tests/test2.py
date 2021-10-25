@@ -20,9 +20,14 @@ def xor_ecc(ecc):
     return new_ecc
 
 bch = bchlib.BCH(ECC_BITS, poly=ECC_POLY)
-bch.encode(b'\xFF' * 512)
-ecc = xor_ecc(bch.ecc)
+ecc = bch.encode(b'\xFF' * 512)
+ecc = xor_ecc(ecc)
 
 for c in ecc:
-    sys.stdout.write('%02X ' % c)
-sys.stdout.write('\n')
+    print('%02X' % (c,), end=' ')
+print()
+
+assert ecc == b'\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF' \
+              b'\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF' \
+              b'\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF' \
+              b'\xFF\xFF'

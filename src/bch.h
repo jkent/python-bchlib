@@ -46,6 +46,7 @@ struct bch_control {
 	unsigned int    t;
 	unsigned int    ecc_bits;
 	unsigned int    ecc_bytes;
+	unsigned int    prim_poly;
 /* private: */
 	uint32_t       *a_pow_tab;
 	uint32_t       *a_log_tab;
@@ -57,7 +58,7 @@ struct bch_control {
 	int            *cache;
 	struct gf_poly *elp;
 	struct gf_poly *poly_2t[4];
-	bool		swap_bits;
+	bool           swap_bits;
 };
 
 struct bch_control *bch_init(int m, int t, unsigned int prim_poly,

@@ -1447,6 +1447,7 @@ struct bch_control *bch_init(int m, int t, unsigned int prim_poly,
 	bch->cache     = bch_alloc(2*t*sizeof(*bch->cache), &err);
 	bch->elp       = bch_alloc((t+1)*sizeof(struct gf_poly_deg1), &err);
 	bch->swap_bits = swap_bits;
+	bch->prim_poly = prim_poly;
 
 	for (i = 0; i < ARRAY_SIZE(bch->poly_2t); i++)
 		bch->poly_2t[i] = bch_alloc(GF_POLY_SZ(2*t), &err);
