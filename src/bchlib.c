@@ -364,7 +364,7 @@ BCH_getattr(BCHObject *self, PyObject *name)
 
 static PyMemberDef BCH_members[] = {
     {"data_len", T_UINT, offsetof(BCHObject, data_len), 0,
-            "Read/write; decode data length in bytes.  Set this value before "
+            "Read/write; decode data length in bytes.  Set this value before\n"
             "decoding."},
     {"ecc_bits", -1, 0, READONLY|RESTRICTED,
             "Readonly; number of ecc bits."},
@@ -396,7 +396,7 @@ static PyMethodDef BCH_methods[] = {
             "There are four ways that 'decode' can function by providing "
             "different\ninput parameters:\n\n    'data' and 'recv_ecc'\n"
             "    'recv_ecc' and 'calc_ecc'\n    'calc_ecc' (as recv_ecc XOR "
-            "calc_ecc)\n    'syn' (a sequence of 2*t values)\n\nbch.data_len "
+            "calc_ecc)\n    'syn' (a sequence of 2*t values)\n\n'data_len' "
             "SHOULD be set before calling this function."},
     {"correct", (PyCFunction) BCH_correct, METH_VARARGS | METH_KEYWORDS,
             "\b\b\b\bcorrect(data=None, ecc=None) → None\nCorrects 'data' "
