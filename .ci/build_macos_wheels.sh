@@ -5,7 +5,7 @@ set -e
 brew update
 brew outdated pyenv || brew upgrade pyenv
 export PATH=~/.pyenv/shims:$PATH
-for PYVER in "2.7.16" "3.4.10" "3.5.7" "3.6.8" "3.7.3"; do
+for PYVER in "3.6.15" "3.7.12" "3.8.12" "3.9.7" "3.10.0"; do
   pyenv install ${PYVER}
   pyenv global ${PYVER}
   python -m pip install wheel

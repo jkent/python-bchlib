@@ -1,7 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Python C module for BCH encoding/decoding.
  *
- * Copyright © 2013, 2017-2018 Jeff Kent <jeff@jkent.net>
+ * Copyright (c) 2013, 2017-2018, 2021 Jeff Kent <jeff@jkent.net>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published by
@@ -22,6 +23,7 @@
 #include <structmember.h>
 
 #include <errno.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "bch.h"
@@ -31,651 +33,417 @@
 # define alloca(size) _alloca(size)
 #endif
 
-#if PY_VERSION_HEX < 0x030900A4 && !defined(Py_SET_SIZE)
-static inline void _Py_SET_SIZE(PyVarObject *ob, Py_ssize_t size)
-{ ob->ob_size = size; }
-#define Py_SET_SIZE(ob, size) _Py_SET_SIZE((PyVarObject*)(ob), size)
-#endif
-
 typedef struct {
-	PyObject_HEAD
-	struct bch_control *bch;
-	int reversed;
+    PyObject_HEAD
+    struct bch_control *bch;
+    uint8_t *ecc;
+    unsigned int msg_len;
+    unsigned int *errloc;
+    int nerr;
 } BCHObject;
-
-static void
-reverse_bytes(uint8_t *dest, const uint8_t *src, size_t length)
-{
-	while(length--) {
-		*dest = (uint8_t)(((*src * 0x0202020202ULL) & 0x010884422010ULL) % 1023);
-		src++;
-		dest++;
-	}
-}
 
 static void
 BCH_dealloc(BCHObject *self)
 {
-	if (self->bch) {
-		free_bch(self->bch);
-	}
+    if (self->bch) {
+        bch_free(self->bch);
+        self->bch = NULL;
+    }
 
-	Py_TYPE(self)->tp_free((PyObject *)self);
+    if (self->ecc) {
+        free(self->ecc);
+        self->ecc = NULL;
+    }
+
+    if (self->errloc) {
+        free(self->errloc);
+        self->errloc = NULL;
+    }
+
+    Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
 static int
 BCH_init(BCHObject *self, PyObject *args, PyObject *kwds)
 {
-	unsigned int prim_poly;
-	int t;
-	PyObject *reversed = NULL;
-	static char *kwlist[] = {"polynomial", "t", "reverse", NULL};
-	int m;
-	unsigned int tmp;
+    int t, m = -1;
+    unsigned int poly = 0;
+    bool swap_bits = false;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "Ii|O", kwlist,
-			&prim_poly, &t, &reversed)) {
-		return -1;
-	}
+    static char *kwlist[] = {"t", "poly", "m", "swap_bits", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|Iip", kwlist, &t, &poly,
+            &m, &swap_bits)) {
+        return -1;
+    }
 
-	self->reversed = 0;
-	if (reversed) {
-		Py_INCREF(reversed);
-		self->reversed = (PyObject_IsTrue(reversed) == 1);
-		Py_DECREF(reversed);
-	}
+    if (m == -1 && poly == 0) {
+        PyErr_SetString(PyExc_ValueError,
+                "'m' and/or 'poly' must be provided");
+        return -1;
+    }
 
-	tmp = prim_poly;
-	m = 0;
-	while (tmp >>= 1) {
-		m++;
-	}
+    if (m == -1) {
+        unsigned int tmp = poly;
+        m = 0;
+        while (tmp >>= 1) {
+            m++;
+        }
+    }
 
-	self->bch = init_bch(m, t, prim_poly);
-	if (!self->bch) {
-		PyErr_SetString(PyExc_RuntimeError,
-			"unable to inititalize BCH, bad parameters?");
-		return -1;
-	}
+    self->bch = bch_init(m, t, poly, swap_bits);
+    if (!self->bch) {
+        PyErr_SetString(PyExc_RuntimeError,
+                "unable to inititalize bch, invalid parameters?");
+        return -1;
+    }
 
-	return 0;
+    return 0;
 }
 
 static PyObject *
 BCH_encode(BCHObject *self, PyObject *args, PyObject *kwds)
 {
-	Py_buffer data, ecc = {0};
-	static char *kwlist[] = {"data", "ecc", NULL};
-	unsigned int ecc_bytes = self->bch->ecc_bytes;
-	PyByteArrayObject *result_ecc = NULL;
-	PyObject *result = NULL;
+    Py_buffer data = {0};
+    Py_buffer ecc = {0};
 
-#if PY_MAJOR_VERSION >= 3
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "y*|y*", kwlist, &data,
-			&ecc)) {
-#else
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s*|s*", kwlist, &data,
-			&ecc)) {
-#endif
-		goto cleanup;
-	}
+    static char *kwlist[] = {"data", "ecc", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "y*|y*", kwlist, &data,
+            &ecc)) {
+        return NULL;
+    }
 
-	result_ecc = PyObject_New(PyByteArrayObject, &PyByteArray_Type);
-	if (result_ecc == NULL) {
-		goto cleanup;
-	}
+    if (!self->ecc) {
+        self->ecc = malloc(self->bch->ecc_bytes);
+        if (!self->ecc) {
+            return NULL;
+        }
+    }
 
-#if PY_MAJOR_VERSION >= 3
-	result_ecc->ob_bytes = PyObject_Malloc(ecc_bytes);
-#else
-	result_ecc->ob_bytes = PyMem_Malloc(ecc_bytes);
-#endif
-	if (result_ecc->ob_bytes == NULL) {
-		result = PyErr_NoMemory();
-		goto cleanup;
-	}
+    if (ecc.buf) {
+        if (ecc.len != self->bch->ecc_bytes) {
+            PyErr_Format(PyExc_ValueError, "ecc length must be %d bytes",
+                self->bch->ecc_bytes);
+            return NULL;
+        }
+        memcpy(self->ecc, ecc.buf, self->bch->ecc_bytes);
+    } else {
+        memset(self->ecc, 0, self->bch->ecc_bytes);
+    }
 
-	if (ecc.buf) {
-		if (ecc.len != ecc_bytes) {
-			PyErr_Format(PyExc_ValueError,
-				"ecc length must be %d bytes",
-				ecc_bytes);
-			goto cleanup;
-		}
-		memcpy(result_ecc->ob_bytes, ecc.buf, ecc_bytes);
-	} else {
-		memset(result_ecc->ob_bytes, 0, ecc_bytes);
-	}
-	Py_SET_SIZE(result_ecc, ecc_bytes);
-	result_ecc->ob_alloc = ecc_bytes;
-#if PY_MAJOR_VERSION >= 3
-	result_ecc->ob_start = result_ecc->ob_bytes;
-#endif
-	result_ecc->ob_exports = 0;
-
-
-	if (self->reversed) {
-		uint8_t *reversed = malloc(data.len);
-		reverse_bytes(reversed, data.buf, data.len);
-		encode_bch(self->bch, reversed, (unsigned int)data.len,
-				(uint8_t *)result_ecc->ob_bytes);
-		free(reversed);
-	}
-	else {
-		encode_bch(self->bch, data.buf, (unsigned int)data.len,
-				(uint8_t *)result_ecc->ob_bytes);
-	}
-
-	result = (PyObject *)result_ecc;
-	Py_INCREF(result_ecc);
-
-cleanup:
-	PyBuffer_Release(&data);
-	if (ecc.buf) {
-		PyBuffer_Release(&ecc);
-	}
-	Py_XDECREF(result_ecc);
-	return result;
+    bch_encode(self->bch, (uint8_t *) data.buf, (unsigned int) data.len,
+            self->ecc);
+    Py_RETURN_NONE;
 }
 
 static PyObject *
 BCH_decode(BCHObject *self, PyObject *args, PyObject *kwds)
 {
-	static char *kwlist[] = {"data", "ecc", NULL};
-	Py_buffer data, ecc;
-	unsigned int *errloc = alloca(sizeof(unsigned int) * self->bch->t);
-	PyByteArrayObject *result_data = NULL;
-	PyByteArrayObject *result_ecc = NULL;
-	PyObject *result = NULL;
+    Py_buffer data = {0};
+    Py_buffer recv_ecc = {0};
+    Py_buffer calc_ecc = {0};
+    PyObject *syn = NULL;
+    int msg_len = 0;
 
-#if PY_MAJOR_VERSION >= 3
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "y*y*", kwlist, &data,
-			&ecc)) {
-#else
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s*s*", kwlist, &data,
-			&ecc)) {
-#endif
-		return NULL;
-	}
+    static char *kwlist[] = {"data", "recv_ecc", "calc_ecc", "syn", "msg_len",
+            NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|y*y*y*Oi", kwlist, &data,
+            &recv_ecc, &calc_ecc, &syn, &msg_len)) {
+        return NULL;
+    }
 
-	if (ecc.len != self->bch->ecc_bytes) {
-		PyErr_Format(PyExc_ValueError,
-			"ecc length should be %d bytes",
-			self->bch->ecc_bytes);
-		goto cleanup;
-	}
+    if (msg_len > 0) {
+        self->msg_len = msg_len;
+    } else {
+        self->msg_len += data.len;
+    }
 
-	result_data = PyObject_New(PyByteArrayObject, &PyByteArray_Type);
-	result_ecc = PyObject_New(PyByteArrayObject, &PyByteArray_Type);
-	if (result_data == NULL || result_ecc == NULL) {
-		goto cleanup;
-	}
+    if (recv_ecc.buf && recv_ecc.len != self->bch->ecc_bytes) {
+        PyErr_Format(PyExc_ValueError, "recv_ecc length should be %d bytes",
+                self->bch->ecc_bytes);
+        return NULL;
+    }
 
-#if PY_MAJOR_VERSION >= 3
-	result_data->ob_bytes = PyObject_Malloc(data.len);
-	result_ecc->ob_bytes = PyObject_Malloc(ecc.len);
-#else
-    result_data->ob_bytes = PyMem_Malloc(data.len);
-	result_ecc->ob_bytes = PyMem_Malloc(ecc.len);
-#endif
-	if (result_data->ob_bytes == NULL || result_ecc->ob_bytes == NULL) {
-		result = PyErr_NoMemory();
-		goto cleanup;
-	}
+    if (calc_ecc.buf && calc_ecc.len != self->bch->ecc_bytes) {
+        PyErr_Format(PyExc_ValueError, "calc_ecc length should be %d bytes",
+            self->bch->ecc_bytes);
+        return NULL;
+    }
 
-	if (self->reversed) {
-		reverse_bytes((uint8_t *)result_data->ob_bytes, data.buf, data.len);
-	} else {
-		memcpy(result_data->ob_bytes, data.buf, data.len);
-	}
-	Py_SET_SIZE(result_data, data.len);
-	result_data->ob_alloc = data.len;
-#if PY_MAJOR_VERSION >= 3
-	result_data->ob_start = result_data->ob_bytes;
-#endif
-	result_data->ob_exports = 0;
+    if (syn) {
+        Py_INCREF(syn);
 
-	memcpy(result_ecc->ob_bytes, ecc.buf, ecc.len);
-	Py_SET_SIZE(result_ecc, ecc.len);
-	result_ecc->ob_alloc = ecc.len;
-#if PY_MAJOR_VERSION >= 3
-	result_ecc->ob_start = result_ecc->ob_bytes;
-#endif
-	result_ecc->ob_exports = 0;
+        if (!PySequence_Check(syn)) {
+            PyErr_SetString(PyExc_TypeError, "'syn' must be a sequence type");
+            Py_DECREF(syn);
+            return NULL;
+        }
 
-	int nerr = decode_bch(self->bch, (uint8_t *)result_data->ob_bytes,
-			(unsigned int)data.len, (uint8_t *)result_ecc->ob_bytes, NULL, NULL,
-			errloc);
+        if (PySequence_Length(syn) != self->bch->t * 2) {
+            PyErr_Format(PyExc_ValueError, "'syn' must have %d elements",
+                    self->bch->t * 2);
+            Py_DECREF(syn);
+            return NULL;
+        }
 
-	if (nerr < 0) {
-		if (nerr == -EINVAL) {
-			PyErr_SetString(PyExc_ValueError,
-				"invalid parameters");
-			goto cleanup;
-		} else if (nerr == -EBADMSG) {
-			nerr = -1;
-		} else {
-			goto cleanup;
-		}
-	}
+        for (unsigned int i = 0; i < self->bch->t * 2; i++) {
+            PyObject *value = PySequence_GetItem(syn, i);
+            Py_INCREF(value);
+            long ltmp = PyLong_AsLong(value);
+            if (ltmp == -1 && PyErr_Occurred()) {
+                Py_DECREF(value);
+                Py_DECREF(syn);
+                return NULL;
+            }
+            self->bch->syn[i] = ltmp;
+            Py_DECREF(value);
+        }
 
-	for (int i = 0; i < nerr; i++) {
-		unsigned int bitnum = errloc[i];
-		if (bitnum >= data.len*8 + ecc.len*8) {
-			PyErr_SetString(PyExc_IndexError,
-				"uncorrectable error");
-			goto cleanup;
-		}
-		if (bitnum < data.len*8) {
-			result_data->ob_bytes[bitnum/8] ^= 1 << (bitnum & 7);
-		} else {
-			result_ecc->ob_bytes[bitnum/8 - data.len] ^= 1 << (bitnum & 7);
-		}
-	}
+        Py_DECREF(syn);
+    }
 
-	if (self->reversed) {
-		reverse_bytes((uint8_t *)result_data->ob_bytes,
-				(uint8_t *)result_data->ob_bytes, data.len);
-	}
+    if (!self->errloc) {
+        self->errloc = malloc(sizeof(unsigned int) * self->bch->t);
+        if (!self->errloc) {
+            return NULL;
+        }
+    }
 
-	result = PyTuple_New(3);
-	PyTuple_SetItem(result, 0, PyLong_FromLong(nerr));
-	PyTuple_SetItem(result, 1, (PyObject *)result_data);
-	PyTuple_SetItem(result, 2, (PyObject *)result_ecc);
-	Py_INCREF(result_data);
-	Py_INCREF(result_ecc);
+    self->nerr = bch_decode(self->bch, data.buf,
+            (unsigned int) msg_len ? msg_len : data.len,
+            recv_ecc.buf, calc_ecc.buf, syn ? self->bch->syn : NULL,
+            self->errloc);
 
-cleanup:
-	PyBuffer_Release(&data);
-	PyBuffer_Release(&ecc);
-	Py_XDECREF(result_data);
-	Py_XDECREF(result_ecc);
-	return result;
+    if (self->nerr < 0) {
+        if (self->nerr == -EINVAL) {
+            PyErr_SetString(PyExc_ValueError, "invalid parameters");
+            return NULL;
+        } else if (self->nerr == -EBADMSG) {
+            self->nerr = -1;
+        } else {
+            return NULL;
+        }
+    }
+
+    return PyLong_FromLong(self->nerr);
 }
 
 static PyObject *
-BCH_decode_inplace(BCHObject *self, PyObject *args, PyObject *kwds)
+BCH_correct(BCHObject *self, PyObject *args, PyObject *kwds)
 {
-	static char *kwlist[] = {"data", "ecc", NULL};
-	Py_buffer data, ecc;
-	unsigned int *errloc = alloca(sizeof(unsigned int) * self->bch->t);
-	PyObject *result = NULL;
+    Py_buffer data = {0};
+    Py_buffer ecc = {0};
+    PyObject *result = NULL;
 
-#if PY_MAJOR_VERSION >= 3
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "y*y*", kwlist, &data,
-			&ecc)) {
-#else
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s*s*", kwlist, &data,
-			&ecc)) {
-#endif
-		return NULL;
-	}
+    static char *kwlist[] = {"data", "ecc", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "y*|y*", kwlist, &data,
+            &ecc)) {
+        goto cleanup;
+    }
 
-	if (data.readonly) {
-		PyErr_SetString(PyExc_ValueError,
-			"data must not be readonly");
-		return NULL;
-	}
+    if (self->nerr < 0) {
+        goto cleanup;
+    }
 
-	if (ecc.len != self->bch->ecc_bytes) {
-		PyErr_Format(PyExc_ValueError,
-			"ecc length should be %d bytes",
-			self->bch->ecc_bytes);
-		return NULL;
-	}
+    if (data.readonly) {
+        PyErr_SetString(PyExc_ValueError, "data cannot be readonly");
+        goto cleanup;
+    }
 
-	if (self->reversed) {
-		reverse_bytes(data.buf, data.buf, data.len);
-	}
+    if (ecc.readonly) {
+        PyErr_SetString(PyExc_ValueError, "ecc cannot be readonly");
+        goto cleanup;
+    }
 
-	int nerr = decode_bch(self->bch, data.buf, (unsigned int)data.len, ecc.buf,
-				NULL, NULL, errloc);
+    for (int i = 0; i < self->nerr; i++) {
+        unsigned int bitnum = self->errloc[i];
+        if (bitnum >= (self->msg_len + self->bch->ecc_bytes) * 8) {
+            PyErr_SetString(PyExc_IndexError, "uncorrectable error");
+            return NULL;
+        }
+        unsigned int byte = bitnum / 8;
+        unsigned char bit = 1 << (bitnum & 7);
+        if (byte < self->msg_len) {
+            ((uint8_t *) data.buf)[byte] ^= bit;
+        } else if (ecc.buf && !ecc.readonly) {
+            ((uint8_t *) ecc.buf)[byte - self->msg_len] ^= bit;
+        }
+    }
 
-	if (nerr < 0) {
-		if (nerr == -EINVAL) {
-			PyErr_SetString(PyExc_ValueError,
-				"invalid parameters");
-			goto cleanup;
-		} else if (nerr == -EBADMSG) {
-			nerr = -1;
-		} else {
-			goto cleanup;
-		}
-	}
-
-	for (int i = 0; i < nerr; i++) {
-		unsigned int bitnum = errloc[i];
-		if (bitnum >= data.len*8 + ecc.len*8) {
-			PyErr_SetString(PyExc_IndexError,
-				"uncorrectable error");
-			goto cleanup;
-		}
-		if (bitnum < data.len*8) {
-			((char *)data.buf)[bitnum/8] ^= 1 << (bitnum & 7);
-		} else if (!ecc.readonly) {
-			((char *)ecc.buf)[bitnum/8 - data.len] ^= 1 << (bitnum & 7);
-		}
-	}
-
-	if (self->reversed) {
-		reverse_bytes(data.buf, data.buf, data.len);
-	}
-
-	result = PyLong_FromLong(nerr);
+    result = Py_None;
+    Py_IncRef(Py_None);
 
 cleanup:
-	PyBuffer_Release(&data);
-	PyBuffer_Release(&ecc);
-	return result;
+    PyBuffer_Release(&data);
+    PyBuffer_Release(&ecc);
+    return result;
 }
 
 static PyObject *
-BCH_decode_syndromes(BCHObject *self, PyObject *args, PyObject *kwds)
+BCH_compute_even_syn(BCHObject *self, PyObject *args, PyObject *kwds)
 {
-	static char *kwlist[] = {"data", "syndromes", NULL};
-	Py_buffer data;
-	PyObject *po_syndromes;
-	unsigned int *syndromes = alloca(sizeof(unsigned int) * self->bch->t);
-	unsigned int *errloc = alloca(sizeof(unsigned int) * self->bch->t);
-	PyByteArrayObject *result_data = NULL;
-	PyObject *result = NULL;
+    PyObject *syn;
+    PyObject *result = NULL;
 
-#if PY_MAJOR_VERSION >= 3
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "y*O", kwlist, &data,
-			&po_syndromes)) {
-#else
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s*O", kwlist, &data,
-			&po_syndromes)) {
-#endif
-		return NULL;
-	}
+    static char *kwlist[] = {"syn", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist, &syn)) {
+        return result;
+    }
 
-	result_data = PyObject_New(PyByteArrayObject, &PyByteArray_Type);
-	if (result_data == NULL) {
-		goto cleanup;
-	}
+    Py_INCREF(syn);
 
-#if PY_MAJOR_VERSION >= 3
-	result_data->ob_bytes = PyObject_Malloc(data.len);
-#else
-    result_data->ob_bytes = PyMem_Malloc(data.len);
-#endif
-	if (result_data->ob_bytes == NULL) {
-		result = PyErr_NoMemory();
-		goto cleanup;
-	}
+    if (!PySequence_Check(syn)) {
+        PyErr_SetString(PyExc_TypeError, "'syn' must be a sequence type");
+        Py_DECREF(syn);
+        return result;
+    }
 
-	if (!PySequence_Check(po_syndromes)) {
-		PyErr_SetString(PyExc_TypeError,
-			"'syndromes' must be a sequence type");
-		goto cleanup;
-	}
+    if (PySequence_Length(syn) != self->bch->t * 2) {
+        PyErr_Format(PyExc_ValueError, "'syn' must have %d elements",
+                self->bch->t * 2);
+        Py_DECREF(syn);
+        return result;
+    }
 
-	if (PySequence_Length(po_syndromes) != self->bch->t*2) {
-		PyErr_Format(PyExc_ValueError,
-			"'syndromes' must have %d elements",
-			self->bch->t*2);
-		goto cleanup;
-	}
+    for (unsigned int i = 0; i < self->bch->t * 2; i++) {
+        PyObject *value = PySequence_GetItem(syn, i);
+        Py_INCREF(value);
+        long ltmp = PyLong_AsLong(value);
+        if (ltmp == -1 && PyErr_Occurred()) {
+            Py_DECREF(value);
+            Py_DECREF(syn);
+            return result;
+        }
+        self->bch->syn[i] = ltmp;
+        Py_DECREF(value);
+    }
 
-	if (self->reversed) {
-		reverse_bytes((uint8_t *)result_data->ob_bytes, data.buf, data.len);
-	} else {
-		memcpy(result_data->ob_bytes, data.buf, data.len);
-	}
-	Py_SET_SIZE(result_data, data.len);
-	result_data->ob_alloc = data.len;
-#if PY_MAJOR_VERSION >= 3
-	result_data->ob_start = result_data->ob_bytes;
-#endif
-	result_data->ob_exports = 0;
+    Py_DECREF(syn);
 
-	Py_INCREF(po_syndromes);
-	for (unsigned int i = 0; i < self->bch->t*2; i++) {
-		PyObject *value = PySequence_GetItem(po_syndromes, i);
-		Py_INCREF(value);
-		long ltmp = PyLong_AsLong(value);
-		if (ltmp == -1 && PyErr_Occurred()) {
-			Py_DECREF(value);
-			goto cleanup;
-		}
-		syndromes[i] = ltmp;
-		Py_DECREF(value);
-	}
- 
-	int nerr = decode_bch(self->bch, NULL, (unsigned int)data.len, NULL, NULL,
-			syndromes, errloc);
-	Py_DECREF(po_syndromes);
+    bch_compute_even_syndromes(self->bch, self->bch->syn);
 
-	if (nerr < 0) {
-		if (nerr == -EINVAL) {
-			PyErr_SetString(PyExc_ValueError,
-				"invalid parameters");
-			goto cleanup;
-		} else if (nerr == -EBADMSG) {
-			nerr = -1;
-		} else {
-			goto cleanup;
-		}
-	}
+    result = PyTuple_New(self->bch->t * 2);
+    for (unsigned int i = 0; i < self->bch->t * 2; i++) {
+        PyObject *value = PyLong_FromLong(self->bch->syn[i]);
+        PyTuple_SetItem(result, i, value);
+    }
 
-	for (int i = 0; i < nerr; i++) {
-		unsigned int bitnum = errloc[i];
-		if (bitnum >= data.len*8 + self->bch->ecc_bytes*8) {
-			PyErr_SetString(PyExc_IndexError,
-				"uncorrectable error");
-			goto cleanup;
-		}
-		if (bitnum < data.len*8) {
-			result_data->ob_bytes[bitnum/8] ^= 1 << (bitnum & 7);
-		}
-	}
-
-	if (self->reversed) {
-		reverse_bytes((uint8_t *)result_data->ob_bytes,
-				(uint8_t *)result_data->ob_bytes, data.len);
-	}
-
-	result = PyTuple_New(2);
-	PyTuple_SetItem(result, 0, PyLong_FromLong(nerr));
-	PyTuple_SetItem(result, 1, (PyObject *)result_data);
-	Py_INCREF(result_data);
-
-cleanup:
-	Py_XDECREF(result_data);
-	PyBuffer_Release(&data);
-	return result;
-}
-
-static PyObject *
-BCH_compute_even_syndromes(BCHObject *self, PyObject *args, PyObject *kwds)
-{
-	PyObject *po_syndromes;
-	static char *kwlist[] = {"syndromes", NULL};
-	PyObject *result = NULL;
-	PyObject *value = NULL;
-	unsigned int *syndromes = NULL;
-
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist,
-			&po_syndromes))
-		return NULL;
-
-	Py_INCREF(po_syndromes);
-
-	if (!PySequence_Check(po_syndromes)) {
-		PyErr_SetString(PyExc_TypeError,
-			"'syndromes' must be a sequence type");
-		goto cleanup;
-	}
-
-	if (PySequence_Length(po_syndromes) != self->bch->t*2) {
-		PyErr_Format(PyExc_ValueError,
-			"'syndromes' should have length of %d",
-			self->bch->t*2);
-		goto cleanup;
-	}
-
-	syndromes = malloc(self->bch->t*2*sizeof(*syndromes));
-	for (unsigned int i = 0; i < self->bch->t*2; i++) {
-		value = PySequence_GetItem(po_syndromes, i);
-		Py_INCREF(value);
-		long tmp = PyLong_AsLong(value);
-		if (tmp == -1 && PyErr_Occurred()) {
-			Py_DECREF(value);
-			goto cleanup;
-		}
-		syndromes[i] = tmp;
-		Py_DECREF(value);
-	}
-
-	compute_even_syndromes(self->bch, syndromes);
-
-	result = PyTuple_New(self->bch->t*2);
-	for (unsigned int i = 0; i < self->bch->t*2; i++) {
-		value = PyLong_FromLong(syndromes[i]);
-		PyTuple_SetItem(result, i, value);
-	}
-
-cleanup:
-	if (syndromes) {
-		free(syndromes);
-	}
-	Py_DECREF(po_syndromes);
-	return result;	
+    return result;
 }
 
 static PyObject *
 BCH_getattr(BCHObject *self, PyObject *name)
 {
-	PyObject *value;
-	PyObject *result = NULL;
-	unsigned int i;
+    PyObject *value;
+    PyObject *result = NULL;
 
-	Py_INCREF(name);
-#if PY_MAJOR_VERSION >= 3
-	const char *cname = PyUnicode_AsUTF8(name);
-#else
-	const char *cname = PyString_AsString(name);
-#endif
+    Py_INCREF(name);
+    const char *cname = PyUnicode_AsUTF8(name);
 
-	if (strcmp(cname, "ecc_bits") == 0) {
-		result = PyLong_FromLong(self->bch->ecc_bits);
-	} else if (strcmp(cname, "ecc_bytes") == 0) {
-		result = PyLong_FromLong(self->bch->ecc_bytes);
-	} else if (strcmp(cname, "m") == 0) {
-		result = PyLong_FromLong(self->bch->m);
-	} else if (strcmp(cname, "n") == 0) {
-		result = PyLong_FromLong(self->bch->n);
-	} else if (strcmp(cname, "syndromes") == 0) {
-		if (self->bch->syn) {
-			result = PyTuple_New(self->bch->t*2);
-			for (i = 0; i < self->bch->t*2; i++) {
-				value = PyLong_FromLong(self->bch->syn[i]);
-				PyTuple_SetItem(result, i, value);
-			}
-		}
-		else {
-			result = Py_None;
-			Py_INCREF(result);
-		}
-	} else if (strcmp(cname, "t") == 0) {
-		result = PyLong_FromLong(self->bch->t);
-	} else {
-		result = PyObject_GenericGetAttr((PyObject *)self, name);
-	}
+    if (strcmp(cname, "bits") == 0) {
+        result = PyLong_FromLong(self->bch->ecc_bits);
+    } else if (strcmp(cname, "bytes") == 0) {
+        result = PyLong_FromLong(self->bch->ecc_bytes);
+    } else if (strcmp(cname, "ecc") == 0) {
+        result = PyBytes_FromStringAndSize((const char *) self->ecc,
+                self->bch->ecc_bytes);
+    } else if (strcmp(cname, "errloc") == 0) {
+        result = PyTuple_New(self->bch->t);
+        for (int i = 0; i < self->nerr; i++) {
+            value = PyLong_FromLong(self->errloc[i]);
+            PyTuple_SetItem(result, i, value);
+        }
+    } else if (strcmp(cname, "m") == 0) {
+        result = PyLong_FromLong(self->bch->m);
+    } else if (strcmp(cname, "n") == 0) {
+        result = PyLong_FromLong(self->bch->n);
+    } else if (strcmp(cname, "syn") == 0) {
+        if (self->bch->syn) {
+            result = PyTuple_New(self->bch->t * 2);
+            for (unsigned int i = 0; i < self->bch->t * 2; i++) {
+                value = PyLong_FromLong(self->bch->syn[i]);
+                PyTuple_SetItem(result, i, value);
+            }
+        }
+        else {
+            result = Py_None;
+            Py_INCREF(result);
+        }
+    } else if (strcmp(cname, "t") == 0) {
+        result = PyLong_FromLong(self->bch->t);
+    } else {
+        result = PyObject_GenericGetAttr((PyObject *)self, name);
+    }
 
-	Py_DECREF(name);
-	return result;
+    Py_DECREF(name);
+    return result;
 }
 
 static PyMemberDef BCH_members[] = {
-	{"ecc_bits", -1, 0, READONLY|RESTRICTED, NULL},
-	{"ecc_bytes", -1, 0, READONLY|RESTRICTED, NULL},
-	{"m", -1, 0, READONLY|RESTRICTED, NULL},
-	{"n", -1, 0, READONLY|RESTRICTED, NULL},
-	{"syndromes", -1, 0, READONLY|RESTRICTED, NULL},
-	{"t", -1, 0, READONLY|RESTRICTED, NULL},
-	{NULL}
+    {"bits", -1, 0, READONLY|RESTRICTED},
+    {"bytes", -1, 0, READONLY|RESTRICTED},
+    {"ecc", -1, 0, READONLY|RESTRICTED},
+    {"errloc", -1, 0, READONLY|RESTRICTED},
+    {"m", -1, 0, READONLY|RESTRICTED},
+    {"msg_len", T_UINT, offsetof(BCHObject, msg_len), 0},
+    {"n", -1, 0, READONLY|RESTRICTED},
+    {"nerr", T_INT, offsetof(BCHObject, nerr), READONLY},
+    {"syn", -1, 0, READONLY|RESTRICTED},
+    {"t", -1, 0, READONLY|RESTRICTED},
+    {NULL}
 };
 
 static PyMethodDef BCH_methods[] = {
-	{"encode", (PyCFunction)BCH_encode, METH_VARARGS | METH_KEYWORDS, NULL},
-	{"decode", (PyCFunction)BCH_decode, METH_VARARGS | METH_KEYWORDS, NULL},
-	{"decode_inplace", (PyCFunction)BCH_decode_inplace,
-			METH_VARARGS | METH_KEYWORDS, NULL},
-	{"decode_syndromes", (PyCFunction)BCH_decode_syndromes,
-			METH_VARARGS | METH_KEYWORDS, NULL},
-	{"compute_even_syndromes", (PyCFunction)BCH_compute_even_syndromes,
-			METH_VARARGS | METH_KEYWORDS, NULL},
-	{NULL}
+    {"encode", (PyCFunction) BCH_encode, METH_VARARGS | METH_KEYWORDS, NULL},
+    {"decode", (PyCFunction) BCH_decode, METH_VARARGS | METH_KEYWORDS, NULL},
+    {"correct", (PyCFunction) BCH_correct, METH_VARARGS | METH_KEYWORDS, NULL},
+    {"compute_even_syn", (PyCFunction) BCH_compute_even_syn,
+            METH_VARARGS | METH_KEYWORDS, NULL},
+    {NULL}
 };
 
 static PyTypeObject BCHType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
-  .tp_name      = "bchlib.BCH",
-  .tp_basicsize = sizeof(BCHObject),
-  .tp_dealloc   = (destructor)BCH_dealloc,
-  .tp_getattro  = (getattrofunc)BCH_getattr,
-  .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
-  .tp_doc       = "BCH Encoder/Decoder",
-  .tp_methods   = BCH_methods,
-  .tp_members   = BCH_members,
-  .tp_init      = (initproc)BCH_init,
-  .tp_new       = PyType_GenericNew,
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name      = "bchlib.BCH",
+    .tp_basicsize = sizeof(BCHObject),
+    .tp_dealloc   = (destructor) BCH_dealloc,
+    .tp_getattro  = (getattrofunc) BCH_getattr,
+    .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_doc       = "BCH Encoder/Decoder",
+    .tp_methods   = BCH_methods,
+    .tp_members   = BCH_members,
+    .tp_init      = (initproc) BCH_init,
+    .tp_new       = PyType_GenericNew,
 };
 
 static PyMethodDef module_methods[] = {
     {NULL}
 };
 
-#if PY_MAJOR_VERSION >= 3
 static struct PyModuleDef moduledef = {
-	PyModuleDef_HEAD_INIT,
-	"BCH",
-	"BCH Library",
-	-1,
-	module_methods,
-	NULL,
-	NULL,
-	NULL,
-	NULL,
+    PyModuleDef_HEAD_INIT,
+    "BCH",
+    "BCH Library",
+    -1,
+    module_methods,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
 };
-#endif
 
-static PyObject *
-moduleinit(void)
-{
-	PyObject *m;
-
-	if (PyType_Ready(&BCHType) < 0)
-		return NULL;
-#if PY_MAJOR_VERSION >= 3
-	m = PyModule_Create(&moduledef);
-#else
-	m = Py_InitModule3("bchlib", module_methods, NULL);
-#endif
-	if (m == NULL)
-		return NULL;
-
-	Py_INCREF(&BCHType);
-	PyModule_AddObject(m, "BCH", (PyObject *)&BCHType);
-
-	return m;
-}
-
-#ifndef PyMODINIT_FUNC
-#define PyMODINIT_FUNC void
-#endif
-#if PY_MAJOR_VERSION >= 3
 PyMODINIT_FUNC
 PyInit_bchlib(void)
 {
-	return moduleinit();
+    PyObject *m;
+
+    if (PyType_Ready(&BCHType) < 0)
+        return NULL;
+    m = PyModule_Create(&moduledef);
+    if (m == NULL)
+        return NULL;
+
+    Py_INCREF(&BCHType);
+    PyModule_AddObject(m, "BCH", (PyObject *)&BCHType);
+
+    return m;
 }
-#else
-PyMODINIT_FUNC
-initbchlib(void)
-{
-	moduleinit();
-}
-#endif

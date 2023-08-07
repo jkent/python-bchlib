@@ -1,10 +1,12 @@
+*.egg-info/
+.vscode/
+__pycache__/
+build/
+dist/
+*.so
 .cproject
 .project
 .pydevproject
+.pytest_cache
 .settings
-.vscode/
-build/
-dist/
-*.egg-info/
-__pycache__/
 MANIFEST
