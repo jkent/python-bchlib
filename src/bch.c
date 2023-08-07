@@ -137,7 +137,7 @@
 #define BCH_ECC_MAX_WORDS      DIV_ROUND_UP(BCH_MAX_M * BCH_MAX_T, 32)
 
 #ifndef dbg
-#define dbg(_fmt, args...)     do {} while (0)
+#define dbg(_fmt, ...)     do {} while (0)
 #endif
 
 /*
@@ -153,7 +153,9 @@ struct gf_poly {
 
 /* polynomial of degree 1 */
 struct gf_poly_deg1 {
-	struct gf_poly poly;
+    struct {
+        unsigned int deg;
+    } poly;
 	unsigned int   c[2];
 };
 
@@ -991,7 +993,7 @@ static void factor_polynomial(struct bch_control *bch, int k, struct gf_poly *f,
 			/* compute h=f/gcd(f,tk); this will modify f and q */
 			gf_poly_div(bch, f, gcd, q);
 			/* store g and h in-place (clobbering f) */
-			*h = &((struct gf_poly_deg1 *)f)[gcd->deg].poly;
+			*h = (struct gf_poly *) &((struct gf_poly_deg1 *)f)[gcd->deg].poly;
 			gf_poly_copy(*g, gcd);
 			gf_poly_copy(*h, q);
 		}
