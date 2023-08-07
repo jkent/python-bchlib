@@ -273,7 +273,7 @@ BCH_compute_even_syn(BCHObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *syn;
     PyObject *result = NULL;
-    unsigned int result_syn[2*self->bch->t];
+    unsigned int *result_syn = alloca(sizeof(unsigned int) * 2 * self->bch->t);
 
     static char *kwlist[] = {"syn", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "O", kwlist, &syn)) {
