@@ -386,26 +386,33 @@ static PyMemberDef BCH_members[] = {
 };
 
 static PyMethodDef BCH_methods[] = {
-    {"encode", (PyCFunction) BCH_encode, METH_VARARGS | METH_KEYWORDS,
-            "\b\b\b\bencode(data[, ecc]) → ecc\nEncodes 'data' with an "
-            "optional starting 'ecc'.  Returns the calculated\necc."},
-    {"decode", (PyCFunction) BCH_decode, METH_VARARGS | METH_KEYWORDS,
-            "\b\b\b\bdecode(data=None, recv_ecc=None, calc_ecc=None, "
-            "syn=None) → nerr\nCalculates error locations and returns "
-            "the number of errors found or\nnegative if decoding failed.\n\n"
-            "There are four ways that 'decode' can function by providing "
-            "different\ninput parameters:\n\n    'data' and 'recv_ecc'\n"
-            "    'recv_ecc' and 'calc_ecc'\n    'calc_ecc' (as recv_ecc XOR "
-            "calc_ecc)\n    'syn' (a sequence of 2*t values)\n\n'data_len' "
-            "SHOULD be set before calling this function."},
-    {"correct", (PyCFunction) BCH_correct, METH_VARARGS | METH_KEYWORDS,
-            "\b\b\b\bcorrect(data=None, ecc=None) → None\nCorrects 'data' "
-            "and 'ecc' if provided.  Buffers must not be readonly."},
+    {"encode", (PyCFunction) BCH_encode, METH_VARARGS | METH_KEYWORDS, "\b\b\b\b"
+            "encode(data[, ecc]) → ecc\n"
+                "Encodes 'data' with an optional starting 'ecc'.  Returns the\n"
+                "calculated ecc."},
+    {"decode", (PyCFunction) BCH_decode, METH_VARARGS | METH_KEYWORDS, "\b\b\b\b"
+            "decode(data=None, recv_ecc=None, calc_ecc=None, syn=None) → nerr\n"
+                "Calculates error locations and returns the number of errors found\n"
+                "or negative if decoding failed.\n\n"
+
+                "There are four ways that 'decode' can function by providing\n"
+                "different input parameters:\n\n"
+
+                "    'data' and 'recv_ecc'\n"
+                "    'recv_ecc' and 'calc_ecc'\n"
+                "    'calc_ecc' (as recv_ecc XOR calc_ecc)\n"
+                "    'syn' (a sequence of 2*t values)\n\n"
+
+                "'data_len' SHOULD be set before calling this function."},
+    {"correct", (PyCFunction) BCH_correct, METH_VARARGS | METH_KEYWORDS, "\b\b\b\b"
+            "correct(data=None, ecc=None) → None\n"
+                "Corrects 'data' and 'ecc' if provided.  Buffers must not be\n"
+                "readonly."},
     {"compute_even_syn", (PyCFunction) BCH_compute_even_syn,
-            METH_VARARGS | METH_KEYWORDS,
-            "\b\b\b\bcompute_even_syn(syn) → syn\nComputes even syndromes "
-            "from odd ones. Takes a sequence of 2*t values\nand returns a "
-            "tuple of 2*t elements."},
+            METH_VARARGS | METH_KEYWORDS, "\b\b\b\b"
+            "compute_even_syn(syn) → syn\n"
+                "Computes even syndromes from odd ones.  Takes a sequence of\n"
+                "2*t values and returns a tuple of 2*t elements."},
     {NULL}
 };
 
@@ -416,14 +423,17 @@ static PyTypeObject BCHType = {
     .tp_dealloc   = (destructor) BCH_dealloc,
     .tp_getattro  = (getattrofunc) BCH_getattr,
     .tp_flags     = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
-    .tp_doc       = "BCH Encoder/Decoder\n\n"
-"__init__(t, poly=None, m=None, swap_bits=False) → bch\n"
-"    Constructor creates a BCH object with given 't' bit strength. At\n"
-"    least one of 'poly' and/or 'm' must be provided. If 'poly' is provided\n"
-"    but 'm' (Galois field order) is not, 'm' will be calculated\n"
-"    automatically.  If 'm' between 5 and 15 inclusive is provided, 'poly'\n"
-"    will be selected automatically.  The 'swap_bits' parameter will reverse\n"
-"    the bit order within data and syndrome bytes.",
+    .tp_doc       =
+        "BCH Encoder/Decoder\n\n"
+
+        "__init__(t, poly=None, m=None, swap_bits=False) → bch\n"
+        "    Constructor creates a BCH object with given 't' bit strength.  At\n"
+        "    least one of 'poly' and/or 'm' must be provided.  If 'poly' is\n"
+        "    provided but 'm' (Galois field order) is not, 'm' will be\n"
+        "    calculated automatically.  If 'm' between 5 and 15 inclusive is'\n"
+        "    provided, 'polywill be selected automatically.  The 'swap_bits'\n"
+        "    parameter will reverse the bit order within data and syndrome\n"
+        "    bytes.",
     .tp_methods   = BCH_methods,
     .tp_members   = BCH_members,
     .tp_init      = (initproc) BCH_init,

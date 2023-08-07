@@ -6,7 +6,7 @@ from setuptools import Extension, setup
 
 NAME = 'bchlib'
 VERSION = '1.0.0'
-DESCRIPTION = 'A python wrapper module for the Linux kernel BCH library.',
+DESCRIPTION = 'A python wrapper module for the Linux kernel BCH library.'
 URL = 'https://github.com/jkent/python-bchlib'
 EMAIL = 'jeff@jkent.net'
 AUTHOR = 'Jeff Kent'
@@ -40,7 +40,6 @@ setup(
     url=URL,
     ext_modules=[BCHLIB_EXT],
     include_package_data=True,
-    license='GNU GPLv2',
     classifiers=[
         'License :: OSI Approved :: GNU General Public License v2 (GPLv2)',
         'Programming Language :: Python',
