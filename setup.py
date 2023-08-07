@@ -1,34 +1,54 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
+
+import os
 
 from setuptools import Extension, setup
 
-__version__ = '1.0.0'
+NAME = 'bchlib'
+VERSION = '1.0.0'
+DESCRIPTION = 'A python wrapper module for the Linux kernel BCH library.',
+URL = 'https://github.com/jkent/python-bchlib'
+EMAIL = 'jeff@jkent.net'
+AUTHOR = 'Jeff Kent'
+REQUIRES_PYTHON = '>=3.6.0'
 
-bchlib_src = ['src/bchlib.c',
-              'src/bch.c']
-bchlib_dep = ['src/bch.h']
+BCHLIB_EXT_SRC = [
+    'src/bch.c',
+    'src/bchlib.c',
+]
 
-bchlib_ext = Extension('bchlib', bchlib_src, depends=bchlib_dep,
+BCHLIB_EXT_DEP = [
+    'src/bch.h',
+]
+
+BCHLIB_EXT = Extension('bchlib', BCHLIB_EXT_SRC, depends=BCHLIB_EXT_DEP,
                        extra_compile_args=['-std=c99'])
 
-setup(name='bchlib', version = __version__,
-      ext_modules = [bchlib_ext],
-      description = 'A python wrapper module for the kernel BCH library.',
-      url = 'https://github.com/jkent/python-bchlib',
-      author = 'Jeff Kent',
-      author_email = 'jeff@jkent.net',
-      maintainer = 'Jeff Kent',
-      maintainer_email = 'jeff@jkent.net',
-      license = 'GNU GPLv2',
-      classifiers = [
-        'Development Status :: 4 - Beta',
-        'Intended Audience :: Developers',
+here = os.path.abspath(os.path.dirname(__file__))
+with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
+    long_description = '\n' + f.read()
+
+setup(
+    name=NAME,
+    version=VERSION,
+    description=DESCRIPTION,
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    author=AUTHOR,
+    author_email=EMAIL,
+    python_requires=REQUIRES_PYTHON,
+    url=URL,
+    ext_modules=[BCHLIB_EXT],
+    include_package_data=True,
+    license='GNU GPLv2',
+    classifiers=[
         'License :: OSI Approved :: GNU General Public License v2 (GPLv2)',
-        'Operating System :: POSIX :: Linux',
-        'Programming Language :: C',
+        'Programming Language :: Python',
         'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: Implementation :: CPython',
+        'Programming Language :: Python :: Implementation :: PyPy',
+        'Intended Audience :: Developers',
         'Topic :: Security :: Cryptography',
-        'Topic :: Software Development :: Libraries :: Python Modules',
-      ],
+    ],
 )
