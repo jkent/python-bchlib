@@ -9,11 +9,15 @@ import unittest
 import bchlib
 
 
+def bitflip(data, bits):
+    bit = random.randint(8 - (bits % 8), bits)
+    data[bit // 8] ^= 0x80 >> (bit % 8)
+
 class BCHTestCase(unittest.TestCase):
     def exercise(self, *args, **kwargs):
         # create a bch object
         bch = bchlib.BCH(*args, **kwargs)
-        max_data_len = bch.n // 8 - (bch.ecc_bits + 7) // 8
+        max_data_len = (bch.n + 7) // 8 - (bch.ecc_bits + 7) // 8
 
         print('max_data_len: %d' % (max_data_len,))
         print('ecc_bits: %d (ecc_bytes: %d)' % (bch.ecc_bits, bch.ecc_bytes))
@@ -34,14 +38,9 @@ class BCHTestCase(unittest.TestCase):
         sha1_initial = hashlib.sha1(packet)
         print('packet sha1: %s' % (sha1_initial.hexdigest(),))
 
-        def bitflip(packet):
-            byte_num = random.randint(0, len(packet) - 1)
-            bit_num = random.randint(0, 7)
-            packet[byte_num] ^= (1 << bit_num)
-
         # make BCH_BITS errors
         for _ in range(bch.t):
-            bitflip(packet)
+            bitflip(packet, bch.n)
 
         # print hash of packet
         sha1_corrupt = hashlib.sha1(packet)

@@ -1126,7 +1126,7 @@ int bch_decode(struct bch_control *bch, const uint8_t *data, unsigned int len,
 	uint32_t sum;
 
 	/* sanity check: make sure data length can be handled */
-	if (8*len > (bch->n-bch->ecc_bits))
+	if (8*len-7 > (bch->n-bch->ecc_bits))
 		return -EINVAL;
 
 	/* if caller does not provide syndromes, compute them */
