@@ -5,7 +5,7 @@ import os
 from setuptools import Extension, setup
 
 NAME = 'bchlib'
-VERSION = '2.0.1'
+VERSION = '2.1.0'
 DESCRIPTION = 'A python wrapper module for the Linux kernel BCH library.'
 URL = 'https://github.com/jkent/python-bchlib'
 EMAIL = 'jeff@jkent.net'
