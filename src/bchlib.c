@@ -4,6 +4,7 @@
 #include <Python.h>
 #include <structmember.h>
 
+#include <alloca.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <string.h>
@@ -18,8 +19,6 @@
 typedef struct {
     PyObject_HEAD
     struct bch_control *bch;
-    uint8_t *ecc;
-    unsigned int data_len;
     unsigned int *errloc;
     int nerr;
 } BCHObject;
@@ -30,11 +29,6 @@ BCH_dealloc(BCHObject *self)
     if (self->bch) {
         bch_free(self->bch);
         self->bch = NULL;
-    }
-
-    if (self->ecc) {
-        free(self->ecc);
-        self->ecc = NULL;
     }
 
     if (self->errloc) {
@@ -79,20 +73,10 @@ BCH_init(BCHObject *self, PyObject *args, PyObject *kwds)
         return -1;
     }
 
-    self->ecc = calloc(1, self->bch->ecc_bytes);
-    if (!self->ecc) {
-        bch_free(self->bch);
-        self->bch = NULL;
-        PyErr_SetString(PyExc_MemoryError, "unable to allocate ecc buffer");
-        return -1;
-    }
-
     self->errloc = calloc(1, sizeof(unsigned int) * self->bch->t);
     if (!self->errloc) {
         bch_free(self->bch);
         self->bch = NULL;
-        free(self->ecc);
-        self->ecc = NULL;
         PyErr_SetString(PyExc_MemoryError, "unable to allocate errloc buffer");
         return -1;
     }
@@ -114,21 +98,20 @@ BCH_encode(BCHObject *self, PyObject *args, PyObject *kwds)
         return NULL;
     }
 
-    if (ecc.buf) {
-        if (ecc.len != self->bch->ecc_bytes) {
-            PyErr_Format(PyExc_ValueError, "ecc length must be %d bytes",
-                self->bch->ecc_bytes);
-            return NULL;
-        }
-        memcpy(self->ecc, ecc.buf, self->bch->ecc_bytes);
-    } else {
-        memset(self->ecc, 0, self->bch->ecc_bytes);
+    if (!ecc.buf) {
+        ecc.len = self->bch->ecc_bytes;
+        ecc.buf = alloca(ecc.len);
+        memset(ecc.buf, 0, ecc.len);
+    } else if (ecc.len != self->bch->ecc_bytes) {
+        PyErr_Format(PyExc_ValueError, "ecc length must be %d bytes",
+            self->bch->ecc_bytes);
+        return NULL;
     }
 
     bch_encode(self->bch, (uint8_t *) data.buf, (unsigned int) data.len,
-            self->ecc);
+            ecc.buf);
 
-    return PyBytes_FromStringAndSize((const char *)self->ecc,
+    return PyBytes_FromStringAndSize((const char *) ecc.buf,
             self->bch->ecc_bytes);
 }
 
@@ -144,10 +127,6 @@ BCH_decode(BCHObject *self, PyObject *args, PyObject *kwds)
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|y*y*y*O", kwlist, &data,
             &recv_ecc, &calc_ecc, &syn)) {
         return NULL;
-    }
-
-    if (data.buf && self->data_len <= 0) {
-        self->data_len = data.len;
     }
 
     if (recv_ecc.buf && recv_ecc.len != self->bch->ecc_bytes) {
@@ -194,7 +173,7 @@ BCH_decode(BCHObject *self, PyObject *args, PyObject *kwds)
         Py_DECREF(syn);
     }
 
-    self->nerr = bch_decode(self->bch, data.buf, self->data_len, recv_ecc.buf,
+    self->nerr = bch_decode(self->bch, data.buf, data.len, recv_ecc.buf,
             calc_ecc.buf, syn ? self->bch->syn : NULL, self->errloc);
 
     if (self->nerr < 0) {
@@ -219,7 +198,7 @@ BCH_correct(BCHObject *self, PyObject *args, PyObject *kwds)
     PyObject *result = NULL;
 
     static char *kwlist[] = {"data", "ecc", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|y*y*", kwlist, &data,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "y*|y*", kwlist, &data,
             &ecc)) {
         goto cleanup;
     }
@@ -240,20 +219,20 @@ BCH_correct(BCHObject *self, PyObject *args, PyObject *kwds)
 
     for (int i = 0; i < self->nerr; i++) {
         unsigned int bitnum = self->errloc[i];
-        if (bitnum >= (self->data_len + self->bch->ecc_bytes) * 8) {
+        if (bitnum >= (data.len + self->bch->ecc_bytes) * 8) {
             PyErr_SetString(PyExc_IndexError, "uncorrectable error");
             return NULL;
         }
         unsigned int byte = bitnum / 8;
         unsigned char bit = 1 << (bitnum & 7);
 
-        if (byte < self->data_len) {
+        if (byte < data.len) {
             if (data.buf && !data.readonly) {
                 ((uint8_t *) data.buf)[byte] ^= bit;
             }
         } else {
             if (ecc.buf && !ecc.readonly) {
-                ((uint8_t *) ecc.buf)[byte - self->data_len] ^= bit;
+                ((uint8_t *) ecc.buf)[byte - data.len] ^= bit;
             }
         }
     }
@@ -363,9 +342,6 @@ BCH_getattr(BCHObject *self, PyObject *name)
 }
 
 static PyMemberDef BCH_members[] = {
-    {"data_len", T_UINT, offsetof(BCHObject, data_len), 0,
-            "Read/write; decode data length in bytes.  Set this value before\n"
-            "decoding."},
     {"ecc_bits", -1, 0, READONLY|RESTRICTED,
             "Readonly; number of ecc bits."},
     {"ecc_bytes", -1, 0, READONLY|RESTRICTED,
@@ -401,9 +377,7 @@ static PyMethodDef BCH_methods[] = {
                 "    'data' and 'recv_ecc'\n"
                 "    'recv_ecc' and 'calc_ecc'\n"
                 "    'calc_ecc' (as recv_ecc XOR calc_ecc)\n"
-                "    'syn' (a sequence of 2*t values)\n\n"
-
-                "'data_len' SHOULD be set before calling this function."},
+                "    'syn' (a sequence of 2*t values)"},
     {"correct", (PyCFunction) BCH_correct, METH_VARARGS | METH_KEYWORDS, "\b\b\b\b"
             "correct(data=None, ecc=None) → None\n"
                 "Corrects 'data' and 'ecc' if provided.  Buffers must not be\n"

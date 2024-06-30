@@ -51,7 +51,6 @@ class BCHTestCase(unittest.TestCase):
         data, ecc = packet[:-bch.ecc_bytes], packet[-bch.ecc_bytes:]
 
         # decode
-        bch.data_len = max_data_len
         nerr = bch.decode(data, ecc)
 
         print('nerr:', nerr)
