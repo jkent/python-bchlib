@@ -4,7 +4,6 @@
 #include <Python.h>
 #include <structmember.h>
 
-#include <alloca.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <string.h>
@@ -14,7 +13,11 @@
 
 #if (defined(_WIN32) || defined(_WIN64)) && !defined(__WINDOWS__)
 # define alloca(size) _alloca(size)
+# include <malloc.h>
+#else
+# include <alloca.h>
 #endif
+
 
 typedef struct {
     PyObject_HEAD
