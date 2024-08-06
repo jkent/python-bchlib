@@ -153,9 +153,7 @@ struct gf_poly {
 
 /* polynomial of degree 1 */
 struct gf_poly_deg1 {
-    struct {
-        unsigned int deg;
-    } poly;
+	struct gf_poly poly;
 	unsigned int   c[2];
 };
 
@@ -993,7 +991,7 @@ static void factor_polynomial(struct bch_control *bch, int k, struct gf_poly *f,
 			/* compute h=f/gcd(f,tk); this will modify f and q */
 			gf_poly_div(bch, f, gcd, q);
 			/* store g and h in-place (clobbering f) */
-			*h = (struct gf_poly *) &((struct gf_poly_deg1 *)f)[gcd->deg].poly;
+			*h = &((struct gf_poly_deg1 *)f)[gcd->deg].poly;
 			gf_poly_copy(*g, gcd);
 			gf_poly_copy(*h, q);
 		}
@@ -1126,7 +1124,7 @@ int bch_decode(struct bch_control *bch, const uint8_t *data, unsigned int len,
 	uint32_t sum;
 
 	/* sanity check: make sure data length can be handled */
-	if (8*len-7 > (bch->n-bch->ecc_bits))
+	if (8*len > (bch->n-bch->ecc_bits))
 		return -EINVAL;
 
 	/* if caller does not provide syndromes, compute them */

@@ -3,7 +3,7 @@
 import bchlib
 import unittest
 
-class BCHTestCase(unittest.TestCase):
+class Tests(unittest.TestCase):
     def test(self):
         bch = bchlib.BCH(16, m=13)
         ecc = bch.encode(b'First')

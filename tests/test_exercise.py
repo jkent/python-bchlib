@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-import binascii
-import hashlib
 import os
 import random
 import unittest
@@ -9,84 +7,92 @@ import unittest
 import bchlib
 
 
-def bitflip(data, bits):
-    bit = random.randint(8 - (bits % 8), bits)
-    data[bit // 8] ^= 0x80 >> (bit % 8)
+def bitflip(data):
+    bit = random.randint(0, len(data) * 8 - 1)
+    data[bit // 8] ^= 1 << (bit % 8)
 
-class BCHTestCase(unittest.TestCase):
+class Tests(unittest.TestCase):
     def exercise(self, *args, **kwargs):
-        # create a bch object
         bch = bchlib.BCH(*args, **kwargs)
-        max_data_len = (bch.n + 7) // 8 - (bch.ecc_bits + 7) // 8
+        bits = bch.n - bch.ecc_bits
 
-        print('max_data_len: %d' % (max_data_len,))
-        print('ecc_bits: %d (ecc_bytes: %d)' % (bch.ecc_bits, bch.ecc_bytes))
-        print('m: %d' % (bch.m,))
-        print('n: %d (%d bytes)' % (bch.n, bch.n // 8))
-        print('prim_poly: 0x%x' % (bch.prim_poly,))
-        print('t: %d' % (bch.t,))
+        # print(f'data:\t{bits} bits (usable bytes: {bits // 8})')
+        # print(f'ecc: \t{bch.ecc_bits} bits (bytes: {bch.ecc_bytes})')
+        # print(f'm:   \t{bch.m}')
+        # print(f'n:   \t{bch.n} ({(bch.n + 7) // 8} bytes)')
+        # print(f'poly:\t{bch.prim_poly}')
+        # print(f't:   \t{bch.t}')
 
-        # random data
-        data = bytearray(os.urandom(max_data_len))
-
-        # encode and make a "packet"
+        data = bytearray(os.urandom(bits // 8))
         ecc = bch.encode(data)
-        print('encoded ecc:', binascii.hexlify(ecc).decode('utf-8'))
         packet = data + ecc
+        corrupted_packet = bytearray(packet)
 
-        # print hash of packet
-        sha1_initial = hashlib.sha1(packet)
-        print('packet sha1: %s' % (sha1_initial.hexdigest(),))
-
-        # make BCH_BITS errors
         for _ in range(bch.t):
-            bitflip(packet, bch.n)
+            bitflip(corrupted_packet)
 
-        # print hash of packet
-        sha1_corrupt = hashlib.sha1(packet)
-        print('packet sha1: %s' % (sha1_corrupt.hexdigest(),))
+        corrupted_data = corrupted_packet[:-bch.ecc_bytes]
+        corrupted_ecc = corrupted_packet[-bch.ecc_bytes:]
 
-        # de-packetize
-        data, ecc = packet[:-bch.ecc_bytes], packet[-bch.ecc_bytes:]
+        nerr = bch.decode(corrupted_data, corrupted_ecc)
+        # print(f'nerr: \t{nerr}')
+        assert(nerr >= 0)
+        # print(bch.errloc)
 
-        # decode
-        nerr = bch.decode(data, ecc)
+        corrected_data = bytearray(corrupted_data)
+        corrected_ecc = bytearray(corrupted_ecc)
+        bch.correct(corrected_data, corrected_ecc)
+        corrected_packet = corrected_data + corrected_ecc
 
-        print('nerr:', nerr)
-        print('syn:', bch.syn)
-        print('errloc:', bch.errloc)
+        assert(corrected_packet == packet)
 
-        # correct
-        bch.correct(data, ecc)
+    def test_t_eq_6_285(self):
+        for _ in range(1000):
+            self.exercise(6, prim_poly=285)
 
-        # packetize
-        packet = data + ecc
+    def test_t_eq_6_285_swap(self):
+        for _ in range(1000):
+            self.exercise(6, prim_poly=285, swap_bits=True)
 
-        # print hash of packet
-        sha1_corrected = hashlib.sha1(packet)
-        print('packet sha1: %s' % (sha1_corrected.hexdigest(),))
+    def test_t_eq_6_487(self):
+        for _ in range(1000):
+            self.exercise(6, prim_poly=487)
 
-        if sha1_initial.digest() == sha1_corrected.digest():
-            print('Corrected!')
-        else:
-            print('Failed')
+    def test_t_eq_6_487_swap(self):
+        for _ in range(1000):
+            self.exercise(6, prim_poly=487, swap_bits=True)
 
-        assert sha1_initial.digest() == sha1_corrected.digest()
+    def test_t_eq_12_17475(self):
+        for _ in range(1000):
+            self.exercise(12, prim_poly=17475)
 
-    def test_t_eq_6(self):
-        self.exercise(6, prim_poly=487)
-
-    def test_t_eq_12(self):
-        self.exercise(12, prim_poly=17475, swap_bits=True)
+    def test_t_eq_12_17475_swap(self):
+        for _ in range(1000):
+            self.exercise(12, prim_poly=17475, swap_bits=True)
 
     def test_t_eq_16(self):
-        self.exercise(16, m=13)
+        for _ in range(1000):
+            self.exercise(16, m=13)
+
+    def test_t_eq_16_swap(self):
+        for _ in range(1000):
+            self.exercise(16, m=13, swap_bits=True)
 
     def test_t_eq_32(self):
-        self.exercise(32, m=14)
+        for _ in range(1000):
+            self.exercise(32, m=14)
+
+    def test_t_eq_32_swap(self):
+        for _ in range(1000):
+            self.exercise(32, m=14, swap_bits=True)
 
     def test_t_eq_64(self):
-        self.exercise(64, m=15)
+        for _ in range(1000):
+            self.exercise(64, m=15)
+
+    def test_t_eq_64_swap(self):
+        for _ in range(1000):
+            self.exercise(64, m=15, swap_bits=True)
 
 if __name__ == '__main__':
     unittest.main()

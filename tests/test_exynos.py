@@ -3,10 +3,9 @@
 """16-bit ECC encoder as in the Samsung S5PV210 and Exynos NAND controllers"""
 
 import bchlib
-import sys
 import unittest
 
-class BCHTestCase(unittest.TestCase):
+class Tests(unittest.TestCase):
     def test(self):
         ECC_POLY = 8219
         ECC_BITS = 16
@@ -25,10 +24,6 @@ class BCHTestCase(unittest.TestCase):
         bch = bchlib.BCH(ECC_BITS, prim_poly=ECC_POLY)
         ecc = bch.encode(b'\xFF' * 512)
         ecc = xor_ecc(ecc)
-
-        for c in ecc:
-            print('%02X' % (c,), end=' ')
-        print()
 
         assert ecc == b'\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF' \
                     b'\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF' \
